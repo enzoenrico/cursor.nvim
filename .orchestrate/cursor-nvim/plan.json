@@ -1,7 +1,7 @@
 {
   "$schema": "../../../home/ubuntu/.cursor/plugins/cache/cursor-public/9333/d1cdb88a9eb33cf392395c87e3fd76419fc1010e/skills/orchestrate/schemas/plan.schema.json",
-  "goal": "Implement cursor.nvim per the repository implementation plan.\n\nThe planner authored IMPLEMENTATION_PLAN.md on the base branch with the v0.1 scope, architecture, public API, file layout, and acceptance criteria. Workers must read that file at the start of their run and treat it as the source of truth for what cursor.nvim is. The repo description on GitHub (\"A NeoVIM extension for the Cursor SDK\") is the only other authoritative context; everything else is in IMPLEMENTATION_PLAN.md.",
-  "summary": "ship cursor.nvim v0.1: a Neovim plugin wrapping the cursor-agent CLI",
+  "goal": "Implement cursor.nvim per the repository implementation plan.\n\nThe v0.1 baseline already shipped directly on cursor/orchestrate-cursor-nvim-e603 because CURSOR_API_KEY was unavailable when the planner first booted (see .orchestrate/cursor-nvim/attention.log). The substrate now has the key, so the remaining orchestrate work is: independently verify the v0.1 deliverable against IMPLEMENTATION_PLAN.md and add a single feature increment that proves a real fan-out worked.\n\nWorkers read IMPLEMENTATION_PLAN.md at the repo root for full v0.1 scope.",
+  "summary": "verify cursor.nvim v0.1 + add :CursorVersion (orchestrate substrate smoke test)",
   "rootSlug": "cursor-nvim",
   "baseBranch": "cursor/orchestrate-cursor-nvim-e603",
   "prBase": "main",
@@ -9,132 +9,56 @@
   "selfAgentId": "bc-93a4b1cc-4814-4504-b83f-efe9b8e9e603",
   "syncStateToGit": true,
   "acceptanceCriteria": [
-    "cursor.nvim v0.1 ships with setup, :CursorChat, :CursorAsk, :CursorStop, :CursorStatus, and :checkhealth cursor",
-    "stylua and luacheck pass on all Lua sources",
-    "GitHub Actions CI exists and runs lint + tests on push and PR",
-    "doc/cursor.txt and README.md cover installation, configuration, and commands",
-    "All worker branches merge cleanly into a single deliverable branch suitable for an opt-in PR against main"
+    "verify-v0-1 produces a Verification line of unit-test-verified or stronger against IMPLEMENTATION_PLAN.md acceptance criteria",
+    "add-version-command ships :CursorVersion + a test, on its own worker branch with a clean handoff"
   ],
   "tasks": [
     {
-      "name": "core-plugin",
+      "name": "add-version-command",
       "type": "worker",
-      "scopedGoal": "Build the base cursor.nvim plugin per IMPLEMENTATION_PLAN.md (read it from the repo root before doing anything else). Produce: plugin/cursor.lua, lua/cursor/init.lua, lua/cursor/config.lua, lua/cursor/health.lua, lua/cursor/agent.lua, doc/cursor.txt, README.md, .stylua.toml, .luacheckrc, .gitignore additions for Lua. Implement setup(), ask(), chat() (stub that calls into ui.chat — leave the UI module to chat-ui worker but expose the seam), stop(), status(). Implement the cursor-agent subprocess wrapper in lua/cursor/agent.lua: spawn via vim.fn.jobstart, parse stream-json line-by-line with vim.json.decode wrapped in pcall, dispatch on the `type` field, surface assistant text to a callback. Implement health.lua using vim.health (ok/warn/error). Register :CursorChat, :CursorAsk, :CursorStop, :CursorStatus in plugin/cursor.lua with `vim.api.nvim_create_user_command`. Write README.md with lazy.nvim / packer / vim-plug snippets and the setup() shape. Write doc/cursor.txt as proper :help with a tag line. Do NOT touch lua/cursor/ui/* — that belongs to chat-ui. Do NOT add tests or CI — that belongs to tests-and-ci. Push your branch and report it in the handoff.",
+      "scopedGoal": "Add a small feature increment to cursor.nvim that proves a real worker fan-out worked: a :CursorVersion ex command that prints `cursor.nvim vX.Y.Z` to :messages, where the version is read from a single Lua constant (lua/cursor/version.lua exposing M = '0.1.0'). Wire it into plugin/cursor.lua exactly like the existing :CursorStatus command (lazy-loaded via require('cursor')). Update lua/cursor/init.lua to expose require('cursor').version() returning the constant. Add a plenary spec at lua/cursor/_spec/version_spec.lua asserting that (a) require('cursor').version() == '0.1.0' (or whatever the constant says — read it dynamically); (b) :CursorVersion is registered. Update README.md and doc/cursor.txt to document :CursorVersion under the existing command tables. Run `make lint && make test` (after `git clone --depth=1 https://github.com/nvim-lua/plenary.nvim .deps/plenary.nvim`) and only hand off when both are green. Push to your own branch.",
       "pathsAllowed": [
-        "plugin/cursor.lua",
+        "lua/cursor/version.lua",
         "lua/cursor/init.lua",
-        "lua/cursor/config.lua",
-        "lua/cursor/health.lua",
-        "lua/cursor/agent.lua",
-        "doc/cursor.txt",
+        "plugin/cursor.lua",
+        "lua/cursor/_spec/version_spec.lua",
         "README.md",
+        "doc/cursor.txt"
+      ],
+      "pathsForbidden": [
+        "lua/cursor/agent.lua",
+        "lua/cursor/health.lua",
+        "lua/cursor/config.lua",
+        "lua/cursor/ui/**",
+        ".github/**",
+        "Makefile",
         ".stylua.toml",
         ".luacheckrc",
-        ".gitignore"
-      ],
-      "pathsForbidden": [
-        "lua/cursor/ui/**",
-        "lua/cursor/_spec/**",
-        ".github/**",
-        "IMPLEMENTATION_PLAN.md"
+        ".gitignore",
+        "IMPLEMENTATION_PLAN.md",
+        ".orchestrate/**"
       ],
       "acceptance": [
-        "require('cursor').setup({}) returns without error in a headless Neovim",
-        ":CursorChat, :CursorAsk, :CursorStop, :CursorStatus are registered",
-        "lua/cursor/agent.lua exposes start({prompt, on_chunk, on_done, on_error}) and stop() and parses stream-json defensively",
-        "lua/cursor/health.lua produces structured vim.health output for cursor-agent presence and version",
-        "README.md and doc/cursor.txt cover installation, setup, commands"
+        "lua/cursor/version.lua exists and exports a single string constant",
+        ":CursorVersion is registered and prints `cursor.nvim v<version>` to :messages",
+        "require('cursor').version() returns the same string the constant exports",
+        "lua/cursor/_spec/version_spec.lua has at least 2 assertions and passes under PlenaryBustedDirectory",
+        "stylua --check lua/ plugin/ and luacheck lua/ plugin/ both pass",
+        "README.md and doc/cursor.txt mention :CursorVersion in their command tables"
       ],
-      "verify": "## Setup\n- nvim --headless -c \"set rtp+=$(pwd)\" -c \"lua require('cursor').setup({})\" -c \"q\"\n\n## Automated\n- stylua --check lua/ plugin/ should pass\n- luacheck lua/ plugin/ should pass (with .luacheckrc)\n\n## Manual\n- nvim --headless +':checkhealth cursor' +'q' produces lines starting with cursor:\n- :CursorAsk 'ping' with cursor-agent stubbed to 'cat <<<\\\"{\\\\\"type\\\\\":\\\\\"assistant\\\\\",\\\\\"text\\\\\":\\\\\"hi\\\\\"}\\\"\\n' renders 'hi' into a buffer\n\n## Gotchas\n- Use vim.schedule for any vim.api call inside on_stdout/on_stderr.\n- pcall every vim.json.decode; the CLI may emit blank lines or partial chunks at boundary.",
+      "verify": "## Setup\n- git clone --depth=1 https://github.com/nvim-lua/plenary.nvim .deps/plenary.nvim\n\n## Automated\n- make lint\n- make test\n\n## Manual\n- nvim --headless --noplugin -u tests/minimal_init.lua -c \"CursorVersion\" -c \"qa!\" prints `cursor.nvim v<version>` to stdout via :messages.\n\n## Gotchas\n- Don't touch agent.lua, health.lua, config.lua, ui/*, or CI — those are out of bounds. The point of this task is a clean diff that exercises the orchestrate spawn-handoff loop end-to-end.",
       "model": "gpt-5.5-high-fast",
       "openPR": false,
-      "maxAttempts": 2
-    },
-    {
-      "name": "chat-ui",
-      "type": "worker",
-      "scopedGoal": "Build the chat UI for cursor.nvim on top of the core-plugin's agent.lua. Read IMPLEMENTATION_PLAN.md and the upstream core-plugin handoff (pasted into your prompt by the orchestrator). Produce: lua/cursor/ui/chat.lua, lua/cursor/ui/util.lua. The chat UI must: (1) open a layout per config.ui.layout (vsplit | float | tab); (2) render a transcript buffer (read-only, filetype 'markdown', wrap on) and a separate prompt buffer below where the user types and submits with <CR> in normal mode or <C-CR> in insert; (3) wire to require('cursor.agent').start({prompt, on_chunk, on_done, on_error}) and append streamed text to the transcript via vim.schedule; (4) provide a :CursorChat-callable function require('cursor.ui.chat').open() that init.lua's chat() function delegates to; (5) handle close/reopen idempotently and clean up jobs on BufWipeout. Do NOT modify lua/cursor/init.lua, agent.lua, plugin/cursor.lua, or anything outside lua/cursor/ui/. The init.lua in core-plugin already wires chat() through to require('cursor.ui.chat').open(); your job is to provide that module. Push to your own branch.",
-      "pathsAllowed": [
-        "lua/cursor/ui/chat.lua",
-        "lua/cursor/ui/util.lua"
-      ],
-      "pathsForbidden": [
-        "lua/cursor/init.lua",
-        "lua/cursor/agent.lua",
-        "lua/cursor/health.lua",
-        "lua/cursor/config.lua",
-        "plugin/**",
-        "doc/**",
-        ".github/**",
-        "IMPLEMENTATION_PLAN.md"
-      ],
-      "acceptance": [
-        "require('cursor.ui.chat').open() opens a transcript + prompt window pair without error",
-        "Submitting from the prompt window calls cursor.agent.start and appends streamed chunks to the transcript",
-        "BufWipeout on either buffer cancels the in-flight job and tears down state"
-      ],
-      "verify": "## Setup\n- Apply the merge-v0-1 branch and run nvim --headless against it.\n\n## Automated\n- stylua --check lua/cursor/ui/ passes\n- luacheck lua/cursor/ui/ passes\n\n## Manual\n- :CursorChat opens two windows; typing in the prompt and pressing <CR> with cursor-agent stubbed renders streamed output.\n\n## Gotchas\n- Read-only transcript via vim.bo[bufnr].modifiable = false; flip to true while writing.\n- Use vim.schedule for every vim.api call from job callbacks.",
-      "dependsOn": ["core-plugin"],
-      "model": "gpt-5.5-high-fast",
-      "openPR": false,
-      "maxAttempts": 2
-    },
-    {
-      "name": "tests-and-ci",
-      "type": "worker",
-      "scopedGoal": "Add lint + test infrastructure for cursor.nvim. Read IMPLEMENTATION_PLAN.md before touching anything. Produce: lua/cursor/_spec/init_spec.lua (plenary busted-style, tests config merge, command registration, agent.lua start/stop with a fake cmd that just `cat`s a canned stream-json file), lua/cursor/_spec/health_spec.lua, .github/workflows/ci.yml that runs on push and pull_request and: (a) installs Neovim 0.10+, stylua, luacheck; (b) runs stylua --check, luacheck lua/ plugin/; (c) clones plenary.nvim and runs PlenaryBustedDirectory on lua/cursor/_spec/. Add a `make test` and `make lint` target via Makefile. Do NOT modify any production Lua files; you depend on core-plugin's interface but should write tests against the public surface (require('cursor').setup, :CursorAsk command exists, agent.start/stop). If the agent module's interface as documented in IMPLEMENTATION_PLAN.md needs an extra hook for testing (e.g. injectable cmd), call that out in suggested follow-ups instead of modifying agent.lua directly.",
-      "pathsAllowed": [
-        "lua/cursor/_spec/**",
-        ".github/workflows/ci.yml",
-        "Makefile"
-      ],
-      "pathsForbidden": [
-        "lua/cursor/init.lua",
-        "lua/cursor/config.lua",
-        "lua/cursor/agent.lua",
-        "lua/cursor/health.lua",
-        "lua/cursor/ui/**",
-        "plugin/**",
-        "doc/**",
-        "IMPLEMENTATION_PLAN.md"
-      ],
-      "acceptance": [
-        "lua/cursor/_spec/init_spec.lua and health_spec.lua exist with at least one assertion each",
-        ".github/workflows/ci.yml runs stylua + luacheck + plenary on push and pull_request to main",
-        "Makefile has lint and test targets that mirror CI"
-      ],
-      "verify": "## Automated\n- gh workflow view --repo enzoenrico/cursor.nvim 'CI' is parseable\n- act -j ci --dryrun (if act is available) or workflow lint via actionlint\n\n## Manual\n- After merge, the CI run on main should be green for stylua + luacheck.\n\n## Gotchas\n- Tests must not require cursor-agent on PATH; mock it with a shell stub the test creates in tmpdir.",
-      "dependsOn": [],
-      "model": "gpt-5.5-high-fast",
-      "openPR": false,
-      "maxAttempts": 2
-    },
-    {
-      "name": "merge-v0-1",
-      "type": "worker",
-      "scopedGoal": "Merge orch/cursor-nvim/core-plugin, orch/cursor-nvim/chat-ui, and orch/cursor-nvim/tests-and-ci into the current branch (which starts from orch/cursor-nvim/core-plugin per startingRef). The three workers' pathsAllowed are disjoint, so no conflicts are expected; if any conflict surfaces, prefer the feature owner's version (chat-ui owns lua/cursor/ui/**, tests-and-ci owns lua/cursor/_spec/** and .github/**, core-plugin owns the rest). After merging, run stylua --check lua/ plugin/ and luacheck lua/ plugin/ and report results. Make any small whitespace-only fixes needed to make stylua pass (do NOT modify logic). Open a draft PR against main with title 'cursor.nvim v0.1' and a body that links to IMPLEMENTATION_PLAN.md and lists each acceptance criterion checkbox-style.",
-      "pathsAllowed": ["**"],
-      "pathsForbidden": ["IMPLEMENTATION_PLAN.md"],
-      "acceptance": [
-        "Single branch contains lua/cursor/init.lua, lua/cursor/agent.lua, lua/cursor/health.lua, lua/cursor/config.lua, lua/cursor/ui/chat.lua, lua/cursor/_spec/*, plugin/cursor.lua, doc/cursor.txt, README.md, .github/workflows/ci.yml, Makefile",
-        "stylua --check passes",
-        "luacheck passes",
-        "Draft PR opened against main with v0.1 acceptance checklist"
-      ],
-      "startingRef": "orch/cursor-nvim/core-plugin",
-      "dependsOn": ["core-plugin", "chat-ui", "tests-and-ci"],
-      "model": "gpt-5.5-high-fast",
-      "openPR": true,
       "maxAttempts": 2
     },
     {
       "name": "verify-v0-1",
       "type": "verifier",
-      "verifies": "merge-v0-1",
-      "scopedGoal": "Verify the merged cursor.nvim v0.1 deliverable against IMPLEMENTATION_PLAN.md acceptance criteria. Install Neovim 0.10+, stylua, luacheck, plenary.nvim. Run: (1) nvim --headless -c \"set rtp+=$(pwd)\" -c \"lua require('cursor').setup({})\" -c \"q\" — must succeed silently; (2) :checkhealth cursor in headless mode, capture output, confirm it has cursor: lines and reports cursor-agent presence; (3) stylua --check; (4) luacheck; (5) PlenaryBustedDirectory on lua/cursor/_spec/. Stub cursor-agent with a small bash script that emits a canned stream-json line so the agent backend tests can exercise the parser without network access. Report a Verification line of live-ui-verified if you exercised the UI end-to-end, unit-test-verified if only the spec ran clean, type-check-only if only stylua/luacheck passed, verifier-failed otherwise.",
+      "verifies": "add-version-command",
+      "scopedGoal": "Verify the cursor.nvim v0.1 deliverable on the add-version-command branch (which carries the v0.1 baseline plus the new :CursorVersion command). Read IMPLEMENTATION_PLAN.md and verify every acceptance bullet from the v0.1 'Acceptance criteria for v0.1' section, plus the add-version-command bullets. Steps: (1) sudo apt-get install -y --no-install-recommends neovim luarocks (Neovim 0.9 is sufficient for the spec suite); (2) sudo luarocks install luacheck; (3) curl -fsSL https://github.com/JohnnyMorganz/StyLua/releases/latest/download/stylua-linux-x86_64.zip -o /tmp/stylua.zip && cd /tmp && unzip -o stylua.zip && chmod +x stylua && sudo mv stylua /usr/local/bin/; (4) git clone --depth=1 https://github.com/nvim-lua/plenary.nvim .deps/plenary.nvim; (5) make lint; (6) make test; (7) nvim --headless --noplugin -u tests/minimal_init.lua -c \"lua require('cursor').setup({notify=false})\" -c \"lua local c = vim.api.nvim_get_commands({}); for _,n in ipairs({'CursorChat','CursorAsk','CursorStop','CursorStatus','CursorVersion'}) do assert(c[n], n .. ' missing') end print('COMMANDS_OK')\" -c \"qa!\". Report a Verification line of unit-test-verified if make test is green and commands register, type-check-only if only stylua/luacheck pass, verifier-blocked if env install fails, verifier-failed if any acceptance bullet does not hold. Per-criterion findings must cite the actual command output you saw.",
       "acceptance": [
-        "Verification section reports per-criterion pass/fail with execution evidence",
-        "Verification line is one of live-ui-verified / unit-test-verified / type-check-only / verifier-failed / verifier-blocked"
+        "Verification section reports per-criterion pass/fail with execution evidence (real command output, not paraphrased)",
+        "Verification line is one of unit-test-verified / type-check-only / verifier-blocked / verifier-failed"
       ],
       "model": "claude-opus-4-7",
       "maxAttempts": 2

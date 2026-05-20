@@ -1,0 +1,51 @@
+{
+  "rootSlug": "cursor-nvim",
+  "tasks": [
+    {
+      "name": "add-version-command",
+      "type": "worker",
+      "branch": "orch/cursor-nvim/add-version-command",
+      "startingRef": "cursor/orchestrate-cursor-nvim-e603",
+      "dependsOn": [],
+      "agentId": null,
+      "runId": null,
+      "parentAgentId": null,
+      "status": "running",
+      "resultStatus": null,
+      "handoffPath": null,
+      "startedAt": "2026-05-20T00:32:50.910Z",
+      "finishedAt": null,
+      "lastUpdate": "2026-05-20T00:32:50.910Z",
+      "note": null,
+      "slackTs": null,
+      "prNumber": null,
+      "failureMode": null,
+      "verification": null,
+      "attempts": 1
+    },
+    {
+      "name": "verify-v0-1",
+      "type": "verifier",
+      "branch": "orch/cursor-nvim/verify-v0-1",
+      "startingRef": "orch/cursor-nvim/add-version-command",
+      "dependsOn": [
+        "add-version-command"
+      ],
+      "agentId": null,
+      "runId": null,
+      "parentAgentId": null,
+      "status": "pending",
+      "resultStatus": null,
+      "handoffPath": null,
+      "startedAt": null,
+      "finishedAt": null,
+      "lastUpdate": null,
+      "note": null,
+      "slackTs": null,
+      "prNumber": null,
+      "failureMode": null,
+      "verification": null
+    }
+  ],
+  "attention": []
+}

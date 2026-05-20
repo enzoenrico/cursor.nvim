@@ -1,0 +1,88 @@
+*cursor.txt*    A Neovim extension for the Cursor SDK             *cursor.nvim*
+
+==============================================================================
+INTRODUCTION                                                  *cursor-intro*
+
+cursor.nvim wraps the `cursor-agent` CLI so you can talk to Cursor agents
+without leaving Neovim. The plugin is pure Lua and uses |jobstart()| to spawn
+the CLI and parse its `stream-json` output.
+
+Requirements:
+  - Neovim 0.10+
+  - `cursor-agent` on $PATH (https://docs.cursor.com)
+
+==============================================================================
+QUICK START                                                  *cursor-setup*
+
+>
+    require("cursor").setup({
+      cmd     = "cursor-agent",
+      model   = nil,         -- nil = SDK default
+      keymaps = false,       -- true installs <leader>c* defaults
+      ui      = { layout = "vsplit" },
+      notify  = true,
+    })
+<
+
+Then run any of the commands below.
+
+==============================================================================
+COMMANDS                                                  *cursor-commands*
+
+                                                                  *:CursorChat*
+:CursorChat       Open a transcript + prompt window pair backed by a fresh
+                  Cursor agent run.
+
+                                                                   *:CursorAsk*
+:CursorAsk {prompt}
+                  One-shot prompt. Output streams into a scratch markdown
+                  buffer. Quote multi-word prompts.
+
+                                                                  *:CursorStop*
+:CursorStop       Cancel the in-flight agent run, if any.
+
+                                                                *:CursorStatus*
+:CursorStatus     Echo the current run status (running, agent_id, model).
+
+==============================================================================
+HEALTH                                                       *cursor-health*
+
+>
+    :checkhealth cursor
+<
+
+Reports whether `cursor-agent` is on $PATH, its version, and whether
+|vim.json| is available (it is on Neovim 0.10+).
+
+==============================================================================
+LUA API                                                          *cursor-api*
+
+require("cursor").setup({opts})        Validate and store options.
+require("cursor").ask(prompt)          One-shot prompt.
+require("cursor").chat()               Open chat panel.
+require("cursor").stop()               Stop the active run.
+require("cursor").status()             Returns { running, agent_id, model }.
+
+require("cursor.agent").start({opts}) Lower-level: spawn the CLI yourself.
+  opts.prompt    string (required)
+  opts.on_chunk  fun(text)
+  opts.on_event  fun(event)   raw decoded JSON line
+  opts.on_done   fun(code)
+  opts.on_error  fun(line)
+
+==============================================================================
+KEYMAPS                                                     *cursor-keymaps*
+
+When |setup()| receives `keymaps = true`, the plugin installs:
+
+  <leader>cc  → :CursorChat
+  <leader>ca  → prompt for input, then :CursorAsk
+  <leader>cs  → :CursorStop
+  <leader>c?  → :CursorStatus
+
+==============================================================================
+LICENSE                                                     *cursor-license*
+
+cursor.nvim ships under the Apache-2.0 license; see LICENSE in the repo root.
+
+ vim:tw=78:ts=8:ft=help:norl:

@@ -44,6 +44,10 @@ COMMANDS                                                  *cursor-commands*
                                                                 *:CursorStatus*
 :CursorStatus     Echo the current run status (running, agent_id, model).
 
+                                                               *:CursorVersion*
+:CursorVersion    Echo `cursor.nvim v<version>` to |:messages|, where
+                  <version> matches |require("cursor").version()|.
+
 ==============================================================================
 HEALTH                                                       *cursor-health*
 
@@ -62,6 +66,7 @@ require("cursor").ask(prompt)          One-shot prompt.
 require("cursor").chat()               Open chat panel.
 require("cursor").stop()               Stop the active run.
 require("cursor").status()             Returns { running, agent_id, model }.
+require("cursor").version()            Returns the plugin's semver string.
 
 require("cursor.agent").start({opts}) Lower-level: spawn the CLI yourself.
   opts.prompt    string (required)

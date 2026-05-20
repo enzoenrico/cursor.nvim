@@ -1,5 +1,6 @@
 local config = require("cursor.config")
 local agent = require("cursor.agent")
+local version = require("cursor.version")
 
 local M = {}
 
@@ -107,6 +108,10 @@ end
 
 function M.status()
   return agent.status()
+end
+
+function M.version()
+  return version
 end
 
 return M

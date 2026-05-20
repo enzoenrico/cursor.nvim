@@ -18,7 +18,7 @@ The plugin shells out to `cursor-agent --print --output-format=stream-json -p <p
 ```lua
 {
   "enzoenrico/cursor.nvim",
-  cmd = { "CursorChat", "CursorAsk", "CursorStop", "CursorStatus" },
+  cmd = { "CursorChat", "CursorAsk", "CursorStop", "CursorStatus", "CursorVersion" },
   opts = {
     keymaps = true,
   },
@@ -53,6 +53,7 @@ EOF
 :CursorAsk explain this  " one-shot prompt
 :CursorStop              " cancel the running agent
 :CursorStatus            " print { running, agent_id, model }
+:CursorVersion           " print `cursor.nvim v<version>`
 :checkhealth cursor      " verify cursor-agent / Node availability
 ```
 
@@ -90,6 +91,7 @@ cursor.ask("explain this function")
 cursor.chat()
 cursor.stop()
 cursor.status()  --> { running = bool, agent_id = string|nil, model = string|nil }
+cursor.version() --> "0.1.0"
 ```
 
 The lower-level `cursor.agent` module exposes `start({prompt, on_chunk, on_event, on_done, on_error})` for scripting your own UI.

@@ -71,3 +71,15 @@ vim.api.nvim_create_user_command(
     desc = "Print cursor.nvim status to :messages",
   }
 )
+
+vim.api.nvim_create_user_command(
+  "CursorVersion",
+  lazy("cursor", function(mod)
+    vim.api.nvim_echo({
+      { "cursor.nvim v" .. tostring(mod.version()), "Normal" },
+    }, true, {})
+  end),
+  {
+    desc = "Print cursor.nvim version to :messages",
+  }
+)

@@ -10,16 +10,16 @@
       "agentId": null,
       "runId": null,
       "parentAgentId": null,
-      "status": "error",
+      "status": "running",
       "resultStatus": null,
       "handoffPath": null,
-      "startedAt": "2026-05-20T00:32:58.311Z",
+      "startedAt": "2026-05-20T00:34:33.261Z",
       "finishedAt": null,
-      "lastUpdate": "2026-05-20T00:32:58.462Z",
-      "note": "spawn failed after 3 transient sub-attempts: l: [invalid_model] Model 'gpt-5.5' does not match a known variant. Call GET /v1/models to list valid id+params combinations. run `bun cli.ts models --check` to re-probe the catalog against /v1/agents.",
+      "lastUpdate": "2026-05-20T00:34:33.261Z",
+      "note": null,
       "slackTs": null,
       "prNumber": null,
-      "failureMode": "unknown",
+      "failureMode": null,
       "verification": null,
       "attempts": 1
     },
@@ -47,10 +47,5 @@
       "verification": null
     }
   ],
-  "attention": [
-    {
-      "at": "2026-05-20T00:32:59.288Z",
-      "message": "add-version-command: spawn failed after 3 transient sub-attempts: l: [invalid_model] Model 'gpt-5.5' does not match a known variant. Call GET /v1/models to list valid id+params combinations. run `bun cli.ts models --check` to re-probe the catalog against /v1/agents."
-    }
-  ]
+  "attention": []
 }

@@ -47,7 +47,7 @@
         "README.md and doc/cursor.txt mention :CursorVersion in their command tables"
       ],
       "verify": "## Setup\n- git clone --depth=1 https://github.com/nvim-lua/plenary.nvim .deps/plenary.nvim\n\n## Automated\n- make lint\n- make test\n\n## Manual\n- nvim --headless --noplugin -u tests/minimal_init.lua -c \"CursorVersion\" -c \"qa!\" prints `cursor.nvim v<version>` to stdout via :messages.\n\n## Gotchas\n- Don't touch agent.lua, health.lua, config.lua, ui/*, or CI — those are out of bounds. The point of this task is a clean diff that exercises the orchestrate spawn-handoff loop end-to-end.",
-      "model": "gpt-5.5-high-fast",
+      "model": "claude-opus-4-7",
       "openPR": false,
       "maxAttempts": 2
     },

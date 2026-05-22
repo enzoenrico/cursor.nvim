@@ -4,6 +4,7 @@ local spinner = require("cursor.spinner")
 local history = require("cursor.history")
 local selection = require("cursor.selection")
 local ui_util = require("cursor.ui.util")
+local log = require("cursor.log")
 
 local M = {}
 
@@ -315,6 +316,7 @@ local function clear_welcome(s)
 end
 
 local function set_state(s, new_state)
+  log.debug("sidebar", "state change", { from = s.state, to = new_state })
   s.state = new_state
   update_winbar(s)
 end
@@ -322,6 +324,7 @@ end
 local function handle_submit(s)
   local lines = vim.api.nvim_buf_get_lines(s.input_buf, 0, -1, false)
   local joined = vim.trim(table.concat(lines, "\n"))
+  log.info("sidebar", "submit", { length = #joined, empty = joined == "" })
   if joined == "" then
     return
   end
@@ -424,18 +427,22 @@ local function handle_submit(s)
     end
   end)
 
+  log.info("sidebar", "starting agent", { prompt_len = #full_prompt, model = config.get().model })
   local handle = agent.start({
     prompt = full_prompt,
     on_event = function(event)
+      log.debug("sidebar", "on_event", { type = event.type, model = event.model })
       if event.type == "agent_created" or event.type == "agent" then
         local m = event.model
         if m and m ~= "" then
           s.last_model = m
+          log.info("sidebar", "model detected from stream", { model = m })
           update_winbar(s)
         end
       end
     end,
     on_chunk = function(text)
+      log.debug("sidebar", "on_chunk", { length = #text, first = not s.got_first_chunk })
       if not s.got_first_chunk then
         s.got_first_chunk = true
         clear_inline_loading(s)
@@ -444,6 +451,7 @@ local function handle_submit(s)
       ui_util.scroll_to_end(s.transcript_win, s.transcript_buf)
     end,
     on_done = function(code)
+      log.info("sidebar", "on_done", { code = code })
       clear_inline_loading(s)
       local success = code == 0
       set_state(s, success and "done" or "error")
@@ -474,6 +482,7 @@ local function handle_submit(s)
       end
     end,
     on_error = function(line)
+      log.warn("sidebar", "on_error", { line = line })
       clear_inline_loading(s)
       ui_util.append_text(s.transcript_buf, "\n⚠ " .. line .. "\n")
       ui_util.scroll_to_end(s.transcript_win, s.transcript_buf)
@@ -481,6 +490,7 @@ local function handle_submit(s)
   })
 
   if not handle then
+    log.error("sidebar", "agent.start() returned nil")
     spinner.stop()
     clear_inline_loading(s)
     set_state(s, "error")
@@ -593,6 +603,7 @@ end
 function M.open(opts)
   opts = opts or {}
   local tid = tab_id()
+  log.info("sidebar", "open()", { tab = tid, has_selection = opts.selection ~= nil })
   local s = sidebars[tid]
 
   if s and s.transcript_win and vim.api.nvim_win_is_valid(s.transcript_win) then
@@ -647,6 +658,7 @@ end
 
 function M.close()
   local tid = tab_id()
+  log.info("sidebar", "close()", { tab = tid })
   local s = sidebars[tid]
   if not s then
     return

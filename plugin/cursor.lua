@@ -143,3 +143,45 @@ vim.api.nvim_create_user_command(
   end),
   { desc = "Apply all cursor suggestions" }
 )
+
+vim.api.nvim_create_user_command(
+  "CursorLog",
+  lazy("cursor.log", function(mod, opts)
+    local path = mod.get_path()
+    if vim.fn.filereadable(path) == 0 then
+      vim.notify("cursor.nvim: log file empty or not found: " .. path, vim.log.levels.INFO)
+      return
+    end
+    vim.cmd("botright split " .. vim.fn.fnameescape(path))
+    vim.cmd("normal! G")
+    vim.bo.modifiable = false
+    vim.wo.wrap = false
+    vim.wo.number = true
+  end),
+  { desc = "Open cursor.nvim debug log", nargs = "?" }
+)
+
+vim.api.nvim_create_user_command(
+  "CursorLogClear",
+  lazy("cursor.log", function(mod)
+    mod.clear()
+    vim.notify("cursor.nvim: log cleared", vim.log.levels.INFO)
+  end),
+  { desc = "Clear cursor.nvim debug log" }
+)
+
+vim.api.nvim_create_user_command(
+  "CursorDebug",
+  lazy("cursor", function(mod)
+    local cfg = require("cursor.config").get()
+    cfg.debug = not cfg.debug
+    local state = cfg.debug and "enabled" or "disabled"
+    local log = require("cursor.log")
+    log.info("debug", "debug logging " .. state)
+    vim.notify("cursor.nvim: debug logging " .. state, vim.log.levels.INFO)
+    if cfg.debug then
+      vim.notify("cursor.nvim: log file: " .. log.get_path(), vim.log.levels.INFO)
+    end
+  end),
+  { desc = "Toggle cursor.nvim debug logging" }
+)

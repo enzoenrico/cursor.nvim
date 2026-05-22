@@ -60,6 +60,7 @@ M.defaults = {
       prev_message = "[[",
     },
   },
+  debug = false,
   notify = true,
 }
 

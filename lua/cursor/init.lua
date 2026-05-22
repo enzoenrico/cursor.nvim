@@ -1,6 +1,7 @@
 local config = require("cursor.config")
 local agent = require("cursor.agent")
 local version = require("cursor.version")
+local log = require("cursor.log")
 
 local M = {}
 
@@ -39,6 +40,11 @@ end
 
 function M.setup(opts)
   config.setup(opts)
+  log.info(
+    "init",
+    "setup()",
+    { keymaps = (config.get()).keymaps, model = (config.get()).model, cmd = (config.get()).cmd }
+  )
   local cfg = config.get()
   if cfg.keymaps then
     setup_keymaps()
@@ -49,6 +55,7 @@ function M.setup(opts)
 end
 
 function M.ask(prompt)
+  log.info("init", "ask()", { prompt_len = prompt and #prompt or 0 })
   if type(prompt) ~= "string" or prompt == "" then
     vim.notify("cursor.nvim: ask() requires a prompt", vim.log.levels.WARN)
     return
@@ -99,6 +106,7 @@ function M.edit()
 end
 
 function M.stop()
+  log.info("init", "stop()", { running = agent.is_running() })
   if not agent.is_running() then
     vim.notify("cursor.nvim: no run to stop", vim.log.levels.INFO)
     return

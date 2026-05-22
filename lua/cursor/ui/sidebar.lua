@@ -21,6 +21,11 @@ local function define_highlights()
   hi(0, "CursorWelcome", { fg = "#5c6370", italic = true, default = true })
   hi(0, "CursorWinbar", { fg = "#abb2bf", bg = "#2c323c", bold = true, default = true })
   hi(0, "CursorWinbarSpinner", { fg = "#c678dd", bg = "#2c323c", bold = true, default = true })
+  hi(0, "CursorWinbarModel", { fg = "#61afef", bg = "#2c323c", bold = true, default = true })
+  hi(0, "CursorWinbarDone", { fg = "#98c379", bg = "#2c323c", bold = true, default = true })
+  hi(0, "CursorWinbarFailed", { fg = "#e06c75", bg = "#2c323c", bold = true, default = true })
+  hi(0, "CursorError", { fg = "#e06c75", bold = true, default = true })
+  hi(0, "CursorLoading", { fg = "#c678dd", italic = true, default = true })
 end
 
 define_highlights()
@@ -28,6 +33,8 @@ define_highlights()
 pcall(function()
   vim.treesitter.language.register("markdown", "CursorChat")
 end)
+
+local loading_ns = vim.api.nvim_create_namespace("cursor_loading")
 
 local function tab_id()
   return vim.api.nvim_get_current_tabpage()
@@ -63,6 +70,18 @@ local function set_winbar(win, text)
   end
 end
 
+local function get_display_model(s)
+  local agent_status = agent.status()
+  if agent_status.model and agent_status.model ~= "" then
+    return agent_status.model
+  end
+  if s and s.last_model and s.last_model ~= "" then
+    return s.last_model
+  end
+  local cfg = config.get()
+  return cfg.model or "default"
+end
+
 local function update_winbar(s)
   if not s or not s.transcript_win or not vim.api.nvim_win_is_valid(s.transcript_win) then
     return
@@ -72,13 +91,48 @@ local function update_winbar(s)
     set_winbar(s.transcript_win, "")
     return
   end
-  local model = cfg.model or "default"
-  local status_text = ""
-  if s.spinner_frame then
-    status_text = string.format(" %%#CursorWinbarSpinner#%s%%#CursorWinbar#", s.spinner_frame)
+  local model = get_display_model(s)
+  local status_part = ""
+  if s.state == "generating" and s.spinner_frame then
+    status_part =
+      string.format(" %%#CursorWinbarSpinner#%s generating...%%#CursorWinbar#", s.spinner_frame)
+  elseif s.state == "error" then
+    status_part = " %#CursorWinbarFailed#✗ error%#CursorWinbar#"
+  elseif s.state == "done" then
+    status_part = " %#CursorWinbarDone#✓ done%#CursorWinbar#"
   end
-  local bar = string.format("%%#CursorWinbar# cursor.nvim │ %s%s ", model, status_text)
+  local bar = string.format(
+    "%%#CursorWinbar# cursor.nvim │ %%#CursorWinbarModel#%s%%#CursorWinbar#%s ",
+    model,
+    status_part
+  )
   set_winbar(s.transcript_win, bar)
+end
+
+local function show_inline_loading(s, frame)
+  if not s or not s.transcript_buf or not vim.api.nvim_buf_is_valid(s.transcript_buf) then
+    return
+  end
+  vim.api.nvim_buf_clear_namespace(s.transcript_buf, loading_ns, 0, -1)
+  local line_count = vim.api.nvim_buf_line_count(s.transcript_buf)
+  pcall(vim.api.nvim_buf_set_extmark, s.transcript_buf, loading_ns, line_count - 1, 0, {
+    virt_lines = { { { " " .. frame .. " Generating response...", "CursorLoading" } } },
+  })
+end
+
+local function clear_inline_loading(s)
+  if not s or not s.transcript_buf or not vim.api.nvim_buf_is_valid(s.transcript_buf) then
+    return
+  end
+  vim.api.nvim_buf_clear_namespace(s.transcript_buf, loading_ns, 0, -1)
+end
+
+local function append_error(s, msg)
+  if not s or not s.transcript_buf then
+    return
+  end
+  ui_util.append_text(s.transcript_buf, "\n⚠ **Error:** " .. msg .. "\n")
+  ui_util.scroll_to_end(s.transcript_win, s.transcript_buf)
 end
 
 local function render_welcome(buf, win)
@@ -90,6 +144,7 @@ local function render_welcome(buf, win)
   if win and vim.api.nvim_win_is_valid(win) then
     width = vim.api.nvim_win_get_width(win)
   end
+  local model = cfg.model or "default"
   local logo = {
     "",
     "",
@@ -102,6 +157,8 @@ local function render_welcome(buf, win)
       "└─────────────────────┘",
       width
     ),
+    "",
+    ui_util.center_text("Model: " .. model, width),
     "",
     ui_util.center_text("Ask anything or paste code.", width),
     ui_util.center_text("Type in the prompt below.", width),
@@ -120,6 +177,7 @@ local function render_welcome(buf, win)
     vim.bo[buf].modifiable = false
   end
   local ns = vim.api.nvim_create_namespace("cursor_welcome")
+  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
   for i = 0, #logo - 1 do
     pcall(vim.api.nvim_buf_set_extmark, buf, ns, i, 0, {
       end_row = i + 1,
@@ -147,7 +205,7 @@ local function create_input(cfg)
   return buf
 end
 
-local function create_selected_code(cfg)
+local function create_selected_code()
   local buf = ui_util.scratch_buf({ filetype = "markdown", modifiable = false })
   vim.bo[buf].bufhidden = "hide"
   return buf
@@ -243,6 +301,24 @@ local function parse_slash_command(text)
   return nil, text
 end
 
+local function clear_welcome(s)
+  local buf_lines = vim.api.nvim_buf_get_lines(s.transcript_buf, 0, -1, false)
+  if #buf_lines == 0 then
+    return
+  end
+  if s.has_welcome then
+    vim.api.nvim_buf_set_lines(s.transcript_buf, 0, -1, false, {})
+    s.has_welcome = false
+    local ns = vim.api.nvim_create_namespace("cursor_welcome")
+    vim.api.nvim_buf_clear_namespace(s.transcript_buf, ns, 0, -1)
+  end
+end
+
+local function set_state(s, new_state)
+  s.state = new_state
+  update_winbar(s)
+end
+
 local function handle_submit(s)
   local lines = vim.api.nvim_buf_get_lines(s.input_buf, 0, -1, false)
   local joined = vim.trim(table.concat(lines, "\n"))
@@ -259,8 +335,11 @@ local function handle_submit(s)
     vim.api.nvim_buf_set_lines(s.transcript_buf, 0, -1, false, {})
     vim.bo[s.transcript_buf].modifiable = was
     s.conversation = { messages = {}, id = s.conversation.id }
+    s.has_welcome = false
+    set_state(s, nil)
     if cfg.ui and cfg.ui.welcome then
       render_welcome(s.transcript_buf, s.transcript_win)
+      s.has_welcome = true
     end
     return
   end
@@ -275,9 +354,12 @@ local function handle_submit(s)
     vim.bo[s.transcript_buf].modifiable = true
     vim.api.nvim_buf_set_lines(s.transcript_buf, 0, -1, false, {})
     vim.bo[s.transcript_buf].modifiable = was
+    s.has_welcome = false
+    set_state(s, nil)
     local cfg = config.get()
     if cfg.ui and cfg.ui.welcome then
       render_welcome(s.transcript_buf, s.transcript_win)
+      s.has_welcome = true
     end
     return
   end
@@ -314,17 +396,7 @@ local function handle_submit(s)
 
   local was = vim.bo[s.transcript_buf].modifiable
   vim.bo[s.transcript_buf].modifiable = true
-  local buf_lines = vim.api.nvim_buf_get_lines(s.transcript_buf, 0, -1, false)
-  local is_welcome = false
-  for _, l in ipairs(buf_lines) do
-    if l:match("cursor%.nvim") and l:match("v0%.1") then
-      is_welcome = true
-      break
-    end
-  end
-  if is_welcome then
-    vim.api.nvim_buf_set_lines(s.transcript_buf, 0, -1, false, {})
-  end
+  clear_welcome(s)
   vim.bo[s.transcript_buf].modifiable = was
 
   ui_util.append_text(
@@ -341,26 +413,53 @@ local function handle_submit(s)
   })
 
   s.spinner_frame = nil
+  s.got_first_chunk = false
+  set_state(s, "generating")
+
   spinner.start("generating", function(frame, _)
     s.spinner_frame = frame
     update_winbar(s)
+    if not s.got_first_chunk then
+      show_inline_loading(s, frame)
+    end
   end)
 
-  agent.start({
+  local handle = agent.start({
     prompt = full_prompt,
+    on_event = function(event)
+      if event.type == "agent_created" or event.type == "agent" then
+        local m = event.model
+        if m and m ~= "" then
+          s.last_model = m
+          update_winbar(s)
+        end
+      end
+    end,
     on_chunk = function(text)
+      if not s.got_first_chunk then
+        s.got_first_chunk = true
+        clear_inline_loading(s)
+      end
       ui_util.append_text(s.transcript_buf, text)
       ui_util.scroll_to_end(s.transcript_win, s.transcript_buf)
     end,
     on_done = function(code)
-      spinner.finish(code == 0, function(frame, _)
+      clear_inline_loading(s)
+      local success = code == 0
+      set_state(s, success and "done" or "error")
+      spinner.finish(success, function(frame, _)
         s.spinner_frame = frame
         update_winbar(s)
         vim.defer_fn(function()
           s.spinner_frame = nil
-          update_winbar(s)
+          if s.state ~= "error" then
+            set_state(s, nil)
+          end
         end, 3000)
       end)
+      if not success then
+        append_error(s, "Agent exited with code " .. tostring(code))
+      end
       ui_util.append_text(s.transcript_buf, "\n")
       ui_util.scroll_to_end(s.transcript_win, s.transcript_buf)
       local response_lines = vim.api.nvim_buf_get_lines(s.transcript_buf, 0, -1, false)
@@ -375,9 +474,18 @@ local function handle_submit(s)
       end
     end,
     on_error = function(line)
-      ui_util.append_text(s.transcript_buf, "\n[stderr] " .. line .. "\n")
+      clear_inline_loading(s)
+      ui_util.append_text(s.transcript_buf, "\n⚠ " .. line .. "\n")
+      ui_util.scroll_to_end(s.transcript_win, s.transcript_buf)
     end,
   })
+
+  if not handle then
+    spinner.stop()
+    clear_inline_loading(s)
+    set_state(s, "error")
+    append_error(s, "Failed to start agent. Check :checkhealth cursor")
+  end
 end
 
 local function bind_keymaps(s)
@@ -501,10 +609,14 @@ function M.open(opts)
     s = {
       transcript_buf = create_transcript(cfg),
       input_buf = create_input(cfg),
-      selected_code_buf = create_selected_code(cfg),
+      selected_code_buf = create_selected_code(),
       conversation = { messages = {}, id = history.generate_id() },
       context_files = {},
       spinner_frame = nil,
+      state = nil,
+      last_model = nil,
+      has_welcome = false,
+      got_first_chunk = false,
       zen = false,
     }
     sidebars[tid] = s
@@ -516,6 +628,7 @@ function M.open(opts)
 
   if cfg.ui and cfg.ui.welcome and #s.conversation.messages == 0 then
     render_welcome(s.transcript_buf, s.transcript_win)
+    s.has_welcome = true
   end
 
   if opts.selection then
@@ -591,6 +704,8 @@ function M.new_chat()
     end
     s.conversation = { messages = {}, id = history.generate_id() }
     s.context_files = {}
+    s.has_welcome = false
+    s.last_model = nil
     selection.clear()
     hide_selected_code_win(s)
     local was = vim.bo[s.transcript_buf].modifiable
@@ -598,9 +713,11 @@ function M.new_chat()
     vim.api.nvim_buf_set_lines(s.transcript_buf, 0, -1, false, {})
     vim.bo[s.transcript_buf].modifiable = was
     vim.api.nvim_buf_set_lines(s.input_buf, 0, -1, false, { "" })
+    set_state(s, nil)
     local cfg = config.get()
     if cfg.ui and cfg.ui.welcome then
       render_welcome(s.transcript_buf, s.transcript_win)
+      s.has_welcome = true
     end
   end
   M.open()
@@ -652,6 +769,9 @@ function M.goto_next_message(s)
   if not s or not s.transcript_buf or not vim.api.nvim_buf_is_valid(s.transcript_buf) then
     return
   end
+  if not s.transcript_win or not vim.api.nvim_win_is_valid(s.transcript_win) then
+    return
+  end
   local lines = vim.api.nvim_buf_get_lines(s.transcript_buf, 0, -1, false)
   local cursor_line = vim.api.nvim_win_get_cursor(s.transcript_win)[1]
   for i = cursor_line + 1, #lines do
@@ -665,6 +785,9 @@ end
 function M.goto_prev_message(s)
   s = s or M.get_sidebar()
   if not s or not s.transcript_buf or not vim.api.nvim_buf_is_valid(s.transcript_buf) then
+    return
+  end
+  if not s.transcript_win or not vim.api.nvim_win_is_valid(s.transcript_win) then
     return
   end
   local lines = vim.api.nvim_buf_get_lines(s.transcript_buf, 0, -1, false)

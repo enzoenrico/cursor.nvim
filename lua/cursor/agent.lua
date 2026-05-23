@@ -51,6 +51,62 @@ local function decode_line(line)
   return decoded
 end
 
+-- Concatenate text blocks from cursor-agent stream-json content arrays.
+-- Supports both the flat test fake (`event.text`) and live CLI shapes
+-- (`event.message.content[{type,text}]`).
+local function text_from_content_blocks(content)
+  if type(content) ~= "table" then
+    return nil
+  end
+  local parts = {}
+  for _, block in ipairs(content) do
+    if type(block) == "table" then
+      if type(block.text) == "string" then
+        table.insert(parts, block.text)
+      elseif type(block.content) == "string" then
+        table.insert(parts, block.content)
+      end
+    elseif type(block) == "string" then
+      table.insert(parts, block)
+    end
+  end
+  if #parts == 0 then
+    return nil
+  end
+  return table.concat(parts, "")
+end
+
+local function extract_assistant_text(event)
+  if type(event.text) == "string" then
+    return event.text
+  end
+  if type(event.content) == "string" then
+    return event.content
+  end
+  if type(event.content) == "table" then
+    return text_from_content_blocks(event.content)
+  end
+  local msg = event.message
+  if type(msg) == "string" then
+    return msg
+  end
+  if type(msg) == "table" then
+    if type(msg.content) == "string" then
+      return msg.content
+    end
+    if type(msg.content) == "table" then
+      return text_from_content_blocks(msg.content)
+    end
+  end
+  return nil
+end
+
+local function emit_chunk(text)
+  if type(text) == "string" and text ~= "" and state.on_chunk then
+    pcall(state.on_chunk, text)
+  end
+end
+
 local function dispatch(event)
   log.debug(
     "agent",
@@ -62,15 +118,16 @@ local function dispatch(event)
   end
   local etype = event.type
   if etype == "assistant" then
-    local text = event.text or event.content or event.message
+    local text = extract_assistant_text(event)
     log.debug("agent", "assistant chunk", { length = text and #text or 0 })
-    if type(text) == "string" and state.on_chunk then
-      pcall(state.on_chunk, text)
-    end
+    emit_chunk(text)
   elseif etype == "agent" or etype == "agent_created" then
     state.agent_id = event.agent_id or event.id or state.agent_id
     state.model = event.model or state.model
     log.info("agent", "agent identified", { agent_id = state.agent_id, model = state.model })
+  elseif etype == "system" and event.subtype == "init" and type(event.model) == "string" then
+    state.model = event.model
+    log.info("agent", "model from system init", { model = state.model })
   elseif etype == "task" then
     log.debug("agent", "task event", { text = event.text })
   else
@@ -217,6 +274,22 @@ end
 
 function M.__reset()
   reset()
+end
+
+function M.__dispatch_event(event)
+  dispatch(event)
+end
+
+function M.__extract_assistant_text(event)
+  return extract_assistant_text(event)
+end
+
+function M.__test_callbacks(opts)
+  opts = opts or {}
+  state.on_chunk = opts.on_chunk
+  state.on_event = opts.on_event
+  state.on_done = opts.on_done
+  state.on_error = opts.on_error
 end
 
 return M

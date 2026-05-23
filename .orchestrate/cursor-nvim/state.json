@@ -1,0 +1,57 @@
+{
+  "rootSlug": "cursor-nvim",
+  "tasks": [
+    {
+      "name": "add-version-command",
+      "type": "worker",
+      "branch": "orch/cursor-nvim/add-version-command",
+      "startingRef": "cursor/orchestrate-cursor-nvim-e603",
+      "dependsOn": [],
+      "agentId": "bc-9f848779-6bce-4826-a932-2615edea7f5b",
+      "runId": "run-3c221e3d-8055-4eb4-82b3-ac28447937b4",
+      "parentAgentId": "bc-93a4b1cc-4814-4504-b83f-efe9b8e9e603",
+      "status": "handed-off",
+      "resultStatus": "finished",
+      "handoffPath": "handoffs/add-version-command.md",
+      "startedAt": "2026-05-20T00:34:33.261Z",
+      "finishedAt": "2026-05-20T00:40:48.050Z",
+      "lastUpdate": "2026-05-20T00:40:51.027Z",
+      "note": null,
+      "slackTs": null,
+      "prNumber": null,
+      "failureMode": null,
+      "verification": "unit-test-verified",
+      "attempts": 1
+    },
+    {
+      "name": "verify-v0-1",
+      "type": "verifier",
+      "branch": "`orch/cursor-nvim/add-version-command` (no new commits; verifier-only)",
+      "startingRef": "orch/cursor-nvim/add-version-command",
+      "dependsOn": [
+        "add-version-command"
+      ],
+      "agentId": "bc-762fffc7-2ad4-4ce4-8160-2213ad8d08d2",
+      "runId": "run-02b4624d-a2e4-4077-88d2-1d823609a940",
+      "parentAgentId": "bc-93a4b1cc-4814-4504-b83f-efe9b8e9e603",
+      "status": "handed-off",
+      "resultStatus": "finished",
+      "handoffPath": "handoffs/verify-v0-1.md",
+      "startedAt": "2026-05-20T00:40:56.272Z",
+      "finishedAt": "2026-05-20T00:45:44.148Z",
+      "lastUpdate": "2026-05-20T00:45:44.149Z",
+      "note": null,
+      "slackTs": null,
+      "prNumber": null,
+      "failureMode": null,
+      "verification": null,
+      "attempts": 1
+    }
+  ],
+  "attention": [
+    {
+      "at": "2026-05-20T00:40:51.027Z",
+      "message": "add-version-command: verification self-reported (unit-test-verified)"
+    }
+  ]
+}

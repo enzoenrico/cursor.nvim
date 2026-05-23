@@ -1,0 +1,67 @@
+{
+  "$schema": "../../../home/ubuntu/.cursor/plugins/cache/cursor-public/9333/d1cdb88a9eb33cf392395c87e3fd76419fc1010e/skills/orchestrate/schemas/plan.schema.json",
+  "goal": "Implement cursor.nvim per the repository implementation plan.\n\nThe v0.1 baseline already shipped directly on cursor/orchestrate-cursor-nvim-e603 because CURSOR_API_KEY was unavailable when the planner first booted (see .orchestrate/cursor-nvim/attention.log). The substrate now has the key, so the remaining orchestrate work is: independently verify the v0.1 deliverable against IMPLEMENTATION_PLAN.md and add a single feature increment that proves a real fan-out worked.\n\nWorkers read IMPLEMENTATION_PLAN.md at the repo root for full v0.1 scope.",
+  "summary": "verify cursor.nvim v0.1 + add :CursorVersion (orchestrate substrate smoke test)",
+  "rootSlug": "cursor-nvim",
+  "baseBranch": "cursor/orchestrate-cursor-nvim-e603",
+  "prBase": "main",
+  "repoUrl": "https://github.com/enzoenrico/cursor.nvim",
+  "selfAgentId": "bc-93a4b1cc-4814-4504-b83f-efe9b8e9e603",
+  "syncStateToGit": true,
+  "acceptanceCriteria": [
+    "verify-v0-1 produces a Verification line of unit-test-verified or stronger against IMPLEMENTATION_PLAN.md acceptance criteria",
+    "add-version-command ships :CursorVersion + a test, on its own worker branch with a clean handoff"
+  ],
+  "tasks": [
+    {
+      "name": "add-version-command",
+      "type": "worker",
+      "scopedGoal": "Add a small feature increment to cursor.nvim that proves a real worker fan-out worked: a :CursorVersion ex command that prints `cursor.nvim vX.Y.Z` to :messages, where the version is read from a single Lua constant (lua/cursor/version.lua exposing M = '0.1.0'). Wire it into plugin/cursor.lua exactly like the existing :CursorStatus command (lazy-loaded via require('cursor')). Update lua/cursor/init.lua to expose require('cursor').version() returning the constant. Add a plenary spec at lua/cursor/_spec/version_spec.lua asserting that (a) require('cursor').version() == '0.1.0' (or whatever the constant says — read it dynamically); (b) :CursorVersion is registered. Update README.md and doc/cursor.txt to document :CursorVersion under the existing command tables. Run `make lint && make test` (after `git clone --depth=1 https://github.com/nvim-lua/plenary.nvim .deps/plenary.nvim`) and only hand off when both are green. Push to your own branch.",
+      "pathsAllowed": [
+        "lua/cursor/version.lua",
+        "lua/cursor/init.lua",
+        "plugin/cursor.lua",
+        "lua/cursor/_spec/version_spec.lua",
+        "README.md",
+        "doc/cursor.txt"
+      ],
+      "pathsForbidden": [
+        "lua/cursor/agent.lua",
+        "lua/cursor/health.lua",
+        "lua/cursor/config.lua",
+        "lua/cursor/ui/**",
+        ".github/**",
+        "Makefile",
+        ".stylua.toml",
+        ".luacheckrc",
+        ".gitignore",
+        "IMPLEMENTATION_PLAN.md",
+        ".orchestrate/**"
+      ],
+      "acceptance": [
+        "lua/cursor/version.lua exists and exports a single string constant",
+        ":CursorVersion is registered and prints `cursor.nvim v<version>` to :messages",
+        "require('cursor').version() returns the same string the constant exports",
+        "lua/cursor/_spec/version_spec.lua has at least 2 assertions and passes under PlenaryBustedDirectory",
+        "stylua --check lua/ plugin/ and luacheck lua/ plugin/ both pass",
+        "README.md and doc/cursor.txt mention :CursorVersion in their command tables"
+      ],
+      "verify": "## Setup\n- git clone --depth=1 https://github.com/nvim-lua/plenary.nvim .deps/plenary.nvim\n\n## Automated\n- make lint\n- make test\n\n## Manual\n- nvim --headless --noplugin -u tests/minimal_init.lua -c \"CursorVersion\" -c \"qa!\" prints `cursor.nvim v<version>` to stdout via :messages.\n\n## Gotchas\n- Don't touch agent.lua, health.lua, config.lua, ui/*, or CI — those are out of bounds. The point of this task is a clean diff that exercises the orchestrate spawn-handoff loop end-to-end.",
+      "model": "claude-opus-4-7",
+      "openPR": false,
+      "maxAttempts": 2
+    },
+    {
+      "name": "verify-v0-1",
+      "type": "verifier",
+      "verifies": "add-version-command",
+      "scopedGoal": "Verify the cursor.nvim v0.1 deliverable on the add-version-command branch (which carries the v0.1 baseline plus the new :CursorVersion command). Read IMPLEMENTATION_PLAN.md and verify every acceptance bullet from the v0.1 'Acceptance criteria for v0.1' section, plus the add-version-command bullets. Steps: (1) sudo apt-get install -y --no-install-recommends neovim luarocks (Neovim 0.9 is sufficient for the spec suite); (2) sudo luarocks install luacheck; (3) curl -fsSL https://github.com/JohnnyMorganz/StyLua/releases/latest/download/stylua-linux-x86_64.zip -o /tmp/stylua.zip && cd /tmp && unzip -o stylua.zip && chmod +x stylua && sudo mv stylua /usr/local/bin/; (4) git clone --depth=1 https://github.com/nvim-lua/plenary.nvim .deps/plenary.nvim; (5) make lint; (6) make test; (7) nvim --headless --noplugin -u tests/minimal_init.lua -c \"lua require('cursor').setup({notify=false})\" -c \"lua local c = vim.api.nvim_get_commands({}); for _,n in ipairs({'CursorChat','CursorAsk','CursorStop','CursorStatus','CursorVersion'}) do assert(c[n], n .. ' missing') end print('COMMANDS_OK')\" -c \"qa!\". Report a Verification line of unit-test-verified if make test is green and commands register, type-check-only if only stylua/luacheck pass, verifier-blocked if env install fails, verifier-failed if any acceptance bullet does not hold. Per-criterion findings must cite the actual command output you saw.",
+      "acceptance": [
+        "Verification section reports per-criterion pass/fail with execution evidence (real command output, not paraphrased)",
+        "Verification line is one of unit-test-verified / type-check-only / verifier-blocked / verifier-failed"
+      ],
+      "model": "claude-opus-4-7",
+      "maxAttempts": 2
+    }
+  ]
+}

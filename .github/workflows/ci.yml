@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stylua
+        uses: JohnnyMorganz/stylua-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: latest
+          args: --check lua/ plugin/
+
+      - name: Install luacheck
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y luarocks
+          sudo luarocks install luacheck
+
+      - name: luacheck
+        run: luacheck lua/ plugin/
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - name: Clone plenary.nvim
+        run: |
+          mkdir -p .deps
+          git clone --depth=1 https://github.com/nvim-lua/plenary.nvim .deps/plenary.nvim
+
+      - name: Make fake CLI executable
+        run: chmod +x tests/fake-cursor-agent.sh
+
+      - name: Run busted suite
+        run: |
+          nvim --headless --noplugin -u tests/minimal_init.lua \
+            -c "PlenaryBustedDirectory lua/cursor/_spec/ {minimal_init = 'tests/minimal_init.lua'}"

@@ -119,6 +119,30 @@ vim.api.nvim_create_user_command(
 )
 
 vim.api.nvim_create_user_command(
+  "CursorMode",
+  lazy("cursor", function(mod)
+    mod.select_mode()
+  end),
+  { desc = "Select cursor agent mode" }
+)
+
+vim.api.nvim_create_user_command(
+  "CursorPlan",
+  lazy("cursor", function(mod)
+    mod.toggle_plan()
+  end),
+  { desc = "Toggle cursor agent plan mode" }
+)
+
+vim.api.nvim_create_user_command(
+  "CursorSkill",
+  lazy("cursor", function(mod)
+    mod.insert_skill()
+  end),
+  { desc = "Insert a configured Cursor skill slash command" }
+)
+
+vim.api.nvim_create_user_command(
   "CursorZen",
   lazy("cursor", function(mod)
     mod.zen()

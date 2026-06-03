@@ -22,6 +22,9 @@ local function setup_keymaps()
   smap(maps.new, "<cmd>CursorNew<cr>", "new conversation")
   smap(maps.history, "<cmd>CursorHistory<cr>", "history")
   smap(maps.model, "<cmd>CursorModel<cr>", "select model")
+  smap(maps.mode, "<cmd>CursorMode<cr>", "select mode")
+  smap(maps.plan, "<cmd>CursorPlan<cr>", "toggle plan mode")
+  smap(maps.skill, "<cmd>CursorSkill<cr>", "insert skill")
   smap(maps.zen, "<cmd>CursorZen<cr>", "zen mode")
   smap(maps.buffer_context, function()
     local sidebar = require("cursor.ui.sidebar")
@@ -132,6 +135,21 @@ end
 function M.select_model()
   local sidebar = require("cursor.ui.sidebar")
   sidebar.select_model()
+end
+
+function M.select_mode()
+  local sidebar = require("cursor.ui.sidebar")
+  sidebar.select_mode()
+end
+
+function M.toggle_plan()
+  local sidebar = require("cursor.ui.sidebar")
+  sidebar.toggle_plan()
+end
+
+function M.insert_skill()
+  local sidebar = require("cursor.ui.sidebar")
+  sidebar.insert_skill()
 end
 
 function M.zen()

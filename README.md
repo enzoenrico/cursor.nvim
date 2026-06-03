@@ -29,6 +29,9 @@ The plugin shells out to `cursor-agent --print --output-format=stream-json -p <p
     "CursorEdit",
     "CursorHistory",
     "CursorModel",
+    "CursorMode",
+    "CursorPlan",
+    "CursorSkill",
     "CursorZen",
     "CursorApply",
     "CursorApplyAll",
@@ -92,7 +95,8 @@ Open the sidebar with `:CursorToggle` or `:CursorChat`. The sidebar shows a tran
 In the prompt input:
 
 - `<C-s>` submits in insert mode; `<CR>` submits in normal mode
-- `@` opens a file picker to attach file context
+- `@` opens a context picker for files, the current buffer, selected code, and project instructions
+- `:CursorSkill` inserts a configured Cursor skill slash command such as `/sdk`
 - `<Tab>` switches focus between transcript and input
 - `q` or `<C-c>` cancels input
 - `/clear`, `/new`, and `/compact` are slash commands for chat management
@@ -113,6 +117,9 @@ Project instructions from `.cursor.md` or `.cursorcontext` in the repo root are 
 | Agent | `:CursorStop` | Cancel the running agent |
 | Agent | `:CursorStatus` | Print `{ running, agent_id, model }` |
 | Agent | `:CursorModel` | Pick a model |
+| Agent | `:CursorMode` | Pick agent, plan, or ask mode |
+| Agent | `:CursorPlan` | Toggle plan mode |
+| Agent | `:CursorSkill` | Insert a configured skill slash command |
 | History | `:CursorHistory` | Browse saved conversations |
 | Diff | `:CursorApply` | Apply the cursor suggestion at the cursor |
 | Diff | `:CursorApplyAll` | Apply all cursor suggestions in the buffer |
@@ -136,6 +143,9 @@ When `setup({ keymaps = true })` is set:
 | `<leader>ce` | Edit visual selection |
 | `<leader>ch` | Conversation history |
 | `<leader>cm` | Model picker |
+| `<leader>cM` | Mode picker |
+| `<leader>cp` | Toggle plan mode |
+| `<leader>c/` | Insert a configured skill |
 | `<leader>cz` | Zen mode |
 | `<leader>cb` | Add current buffer to context |
 | `<leader>cs` | Stop agent |
@@ -169,8 +179,29 @@ All diff keymaps are configurable under `diff` in setup (see below).
 
 ```lua
 require("cursor").setup({
-  cmd = "cursor-agent",   -- override path or args, e.g. "node bin/agent.js"
-  model = nil,              -- nil = SDK default; e.g. "gpt-5.5-high"
+  cmd = "cursor-agent",     -- override path or args, e.g. "node bin/agent.js"
+  transport = "cli",        -- "cli" or "sdk" (sdk uses sdk.cmd below)
+  model = nil,              -- nil = Cursor default; e.g. "gpt-5.5-high"
+  model_params = {},        -- e.g. { { id = "thinking", value = "high" } }
+  mode = "agent",           -- "agent" | "plan" | "ask"
+  stream_partial_output = true,
+  force = false,            -- pass --force / local.force
+  sandbox = nil,            -- "enabled" | "disabled"
+  trust = false,
+  approve_mcps = false,
+  workspace = nil,
+  headers = {},             -- repeated --header values for the CLI
+  plugin_dirs = {},         -- repeated --plugin-dir values for skills/plugins
+  extra_args = {},          -- any additional cursor-agent args
+  models = nil,             -- optional static model list for :CursorModel
+  skills = {},              -- e.g. { { name = "sdk", description = "Use Cursor SDK" } }
+  sdk = {
+    cmd = nil,              -- e.g. "node scripts/cursor-sdk-bridge.mjs"
+    runtime = "local",
+    api_key_env = "CURSOR_API_KEY",
+    force = false,
+    extra_args = {},
+  },
   keymaps = true,           -- install the default <leader>c* maps
   debug = false,            -- toggle at runtime with :CursorDebug
   notify = true,            -- vim.notify on errors
@@ -225,10 +256,31 @@ cursor.status()            --> { running, agent_id, model }
 cursor.version()           --> "0.1.0"
 cursor.history()           -- open history browser
 cursor.select_model()      -- open model picker
+cursor.select_mode()       -- open mode picker
+cursor.toggle_plan()       -- toggle plan mode
+cursor.insert_skill()      -- insert a configured /skill
 cursor.zen()               -- toggle zen mode
 ```
 
 The lower-level `cursor.agent` module exposes `start({ prompt, on_chunk, on_event, on_done, on_error })` for scripting your own UI.
+
+## Cursor SDK transport
+
+The default transport remains the Cursor Agent CLI. To drive the same UI through the Cursor TypeScript SDK, install `@cursor/sdk` in an environment that can run Node, set `CURSOR_API_KEY`, and point `sdk.cmd` at the optional bridge:
+
+```lua
+require("cursor").setup({
+  transport = "sdk",
+  sdk = {
+    cmd = "node /path/to/cursor.nvim/scripts/cursor-sdk-bridge.mjs",
+  },
+  model = "composer-2.5",
+  model_params = { { id = "thinking", value = "high" } },
+  mode = "plan",
+})
+```
+
+Skills are discovered by Cursor from workspace skill directories and plugin directories. Configure `plugin_dirs` for CLI runs, and configure `skills` when you want `:CursorSkill` to insert explicit slash-command invocations.
 
 ## Development
 

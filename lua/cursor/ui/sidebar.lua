@@ -37,6 +37,15 @@ end)
 
 local loading_ns = vim.api.nvim_create_namespace("cursor_loading")
 
+local fallback_models = {
+  "default",
+  "composer-2.5",
+  "gpt-5.5-high",
+  "gpt-5.4-high",
+  "claude-opus-4-8-thinking-high",
+  "claude-4.6-sonnet-high-thinking",
+}
+
 local function tab_id()
   return vim.api.nvim_get_current_tabpage()
 end
@@ -80,7 +89,12 @@ local function get_display_model(s)
     return s.last_model
   end
   local cfg = config.get()
-  return cfg.model or "default"
+  local mode = cfg.mode == "plan" and "plan" or nil
+  local model = cfg.model or "default"
+  if mode then
+    return model .. " (" .. mode .. ")"
+  end
+  return model
 end
 
 local function update_winbar(s)
@@ -126,6 +140,90 @@ local function clear_inline_loading(s)
     return
   end
   vim.api.nvim_buf_clear_namespace(s.transcript_buf, loading_ns, 0, -1)
+end
+
+local function context_label(item)
+  if item.type == "file" then
+    return "@" .. vim.fn.fnamemodify(item.path, ":.")
+  end
+  if item.type == "buffer" then
+    return "@buffer"
+  end
+  if item.type == "selection" then
+    return "@selection"
+  end
+  if item.type == "instructions" then
+    return "@instructions"
+  end
+  return "@context"
+end
+
+local function context_key(item)
+  return (item.type or "context") .. ":" .. tostring(item.path or item.name or "")
+end
+
+local function ensure_context_item(s, item)
+  s.context_items = s.context_items or {}
+  local key = context_key(item)
+  for _, existing in ipairs(s.context_items) do
+    if context_key(existing) == key then
+      vim.notify("cursor.nvim: context already attached", vim.log.levels.INFO)
+      return false
+    end
+  end
+  table.insert(s.context_items, item)
+  return true
+end
+
+local function insert_context_mention(s, item)
+  if not s or not s.input_buf or not vim.api.nvim_buf_is_valid(s.input_buf) then
+    return
+  end
+  local mention = context_label(item)
+  local line = vim.api.nvim_buf_get_lines(s.input_buf, -2, -1, false)[1] or ""
+  local prefix = line == "" and "" or " "
+  vim.api.nvim_buf_set_lines(s.input_buf, -2, -1, false, { line .. prefix .. mention .. " " })
+  vim.api.nvim_set_current_win(s.input_win)
+  vim.cmd("normal! G$")
+end
+
+local function format_context_item(item)
+  if item.type == "file" then
+    local ok, file_lines = pcall(vim.fn.readfile, item.path)
+    if ok and file_lines then
+      local ft = vim.filetype.match({ filename = item.path }) or ""
+      return string.format(
+        "[File: %s]\n```%s\n%s\n```\n\n",
+        item.path,
+        ft,
+        table.concat(file_lines, "\n")
+      )
+    end
+  elseif item.type == "buffer" then
+    local buf = item.buf
+    if buf and vim.api.nvim_buf_is_valid(buf) then
+      local name = vim.api.nvim_buf_get_name(buf)
+      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+      local ft = vim.bo[buf].filetype or ""
+      return string.format(
+        "[Buffer: %s]\n```%s\n%s\n```\n\n",
+        name ~= "" and name or tostring(buf),
+        ft,
+        table.concat(lines, "\n")
+      )
+    end
+  elseif item.type == "selection" then
+    local text = selection.format_context()
+    if text then
+      return "[Selected Code]\n" .. text .. "\n\n"
+    end
+  elseif item.type == "instructions" then
+    local instructions = ui_util.get_project_instructions()
+    if instructions then
+      return "[Project Instructions]\n" .. instructions .. "\n\n"
+    end
+  end
+  return nil
 end
 
 local function append_error(s, msg)
@@ -374,23 +472,23 @@ local function handle_submit(s)
     return
   end
 
-  local sel_context = selection.format_context()
   local instructions = ui_util.get_project_instructions()
   local full_prompt = ""
   if instructions then
     full_prompt = full_prompt .. "[Project Instructions]\n" .. instructions .. "\n\n"
   end
+  local sel_context = selection.format_context()
   if sel_context then
     full_prompt = full_prompt .. "[Selected Code]\n" .. sel_context .. "\n\n"
   end
 
-  if s.context_files and #s.context_files > 0 then
-    for _, fp in ipairs(s.context_files) do
-      local ok, file_lines = pcall(vim.fn.readfile, fp)
-      if ok and file_lines then
-        local ft = vim.filetype.match({ filename = fp }) or ""
-        full_prompt = full_prompt
-          .. string.format("[File: %s]\n```%s\n%s\n```\n\n", fp, ft, table.concat(file_lines, "\n"))
+  if s.context_items and #s.context_items > 0 then
+    for _, item in ipairs(s.context_items) do
+      if item.type ~= "instructions" or not instructions then
+        local formatted = format_context_item(item)
+        if formatted then
+          full_prompt = full_prompt .. formatted
+        end
       end
     end
   end
@@ -536,8 +634,13 @@ local function bind_keymaps(s)
   end
 
   vim.keymap.set("n", "@", function()
-    M.add_file_context(s)
-  end, vim.tbl_extend("force", input_opts, { desc = "cursor.nvim: add file context" }))
+    M.add_context(s)
+  end, vim.tbl_extend("force", input_opts, { desc = "cursor.nvim: add context" }))
+
+  vim.keymap.set("i", "@", function()
+    vim.cmd("stopinsert")
+    M.add_context(s)
+  end, vim.tbl_extend("force", input_opts, { desc = "cursor.nvim: add context" }))
 
   vim.keymap.set("n", "<Tab>", function()
     if vim.api.nvim_get_current_win() == s.input_win then
@@ -622,7 +725,7 @@ function M.open(opts)
       input_buf = create_input(cfg),
       selected_code_buf = create_selected_code(),
       conversation = { messages = {}, id = history.generate_id() },
-      context_files = {},
+      context_items = {},
       spinner_frame = nil,
       state = nil,
       last_model = nil,
@@ -648,7 +751,7 @@ function M.open(opts)
   end
 
   if cfg.ui and cfg.ui.show_hints and s.input_win and vim.api.nvim_win_is_valid(s.input_win) then
-    local hint = "Submit: <CR> (n) / <C-s> (i) │ @: add file │ <Tab>: switch │ q: close"
+    local hint = "Submit: <CR> (n) / <C-s> (i) │ @: context │ <Tab>: switch │ q: close"
     set_winbar(s.input_win, "%#Comment# " .. hint .. " ")
   end
 
@@ -715,7 +818,7 @@ function M.new_chat()
       pcall(history.save, s.conversation.id, s.conversation)
     end
     s.conversation = { messages = {}, id = history.generate_id() }
-    s.context_files = {}
+    s.context_items = {}
     s.has_welcome = false
     s.last_model = nil
     selection.clear()
@@ -812,7 +915,7 @@ function M.goto_prev_message(s)
   end
 end
 
-function M.add_file_context(s)
+function M.add_context(s)
   s = s or M.get_sidebar()
   if not s then
     return
@@ -820,26 +923,48 @@ function M.add_file_context(s)
   local cwd = vim.fn.getcwd()
   local files = vim.fn.glob(cwd .. "/**/*", false, true)
   local choices = {}
+  local choice_items = {}
+  local function add_choice(label, item)
+    table.insert(choices, label)
+    choice_items[label] = item
+  end
+  add_choice("@buffer Current buffer", {
+    type = "buffer",
+    buf = vim.api.nvim_get_current_buf(),
+    name = vim.api.nvim_buf_get_name(vim.api.nvim_get_current_buf()),
+  })
+  if selection.format_context() then
+    add_choice("@selection Visual selection", { type = "selection", name = "selection" })
+  end
+  if ui_util.get_project_instructions() then
+    add_choice(
+      "@instructions Project instructions",
+      { type = "instructions", name = "instructions" }
+    )
+  end
   for _, f in ipairs(files) do
     if vim.fn.isdirectory(f) == 0 then
-      table.insert(choices, vim.fn.fnamemodify(f, ":."))
+      local rel = vim.fn.fnamemodify(f, ":.")
+      add_choice("@" .. rel, { type = "file", path = f, name = rel })
     end
   end
   table.sort(choices)
-  vim.ui.select(choices, { prompt = "Add file context:" }, function(choice)
+  vim.ui.select(choices, { prompt = "Add context:" }, function(choice)
     if choice then
-      local abs = cwd .. "/" .. choice
-      s.context_files = s.context_files or {}
-      for _, existing in ipairs(s.context_files) do
-        if existing == abs then
-          vim.notify("cursor.nvim: file already in context", vim.log.levels.INFO)
-          return
-        end
+      local item = choice_items[choice]
+      if item and ensure_context_item(s, item) then
+        insert_context_mention(s, item)
+        vim.notify(
+          "cursor.nvim: added " .. context_label(item) .. " to context",
+          vim.log.levels.INFO
+        )
       end
-      table.insert(s.context_files, abs)
-      vim.notify("cursor.nvim: added " .. choice .. " to context", vim.log.levels.INFO)
     end
   end)
+end
+
+function M.add_file_context(s)
+  return M.add_context(s)
 end
 
 function M.add_current_buffer()
@@ -857,42 +982,109 @@ function M.add_current_buffer()
     vim.notify("cursor.nvim: buffer has no file", vim.log.levels.WARN)
     return
   end
-  s.context_files = s.context_files or {}
-  for _, existing in ipairs(s.context_files) do
-    if existing == name then
-      vim.notify("cursor.nvim: file already in context", vim.log.levels.INFO)
-      return
-    end
+  local item = { type = "file", path = name, name = vim.fn.fnamemodify(name, ":.") }
+  if ensure_context_item(s, item) then
+    insert_context_mention(s, item)
+    vim.notify("cursor.nvim: added " .. context_label(item) .. " to context", vim.log.levels.INFO)
   end
-  table.insert(s.context_files, name)
-  vim.notify(
-    "cursor.nvim: added " .. vim.fn.fnamemodify(name, ":.") .. " to context",
-    vim.log.levels.INFO
-  )
 end
 
 function M.select_model()
-  local models = {
-    "default",
-    "gpt-4",
-    "gpt-4o",
-    "gpt-3.5-turbo",
-    "claude-sonnet-4-20250514",
-    "claude-opus-4-20250514",
-  }
-  vim.ui.select(models, { prompt = "Select model:" }, function(choice)
+  local function open_picker(models)
+    if #models == 0 then
+      models = fallback_models
+    elseif models[1] ~= "default" then
+      table.insert(models, 1, "default")
+    end
+    vim.ui.select(models, { prompt = "Select model:" }, function(choice)
+      if choice then
+        local cfg = config.get()
+        local model_id = choice:match("^([^%s]+)") or choice
+        if model_id == "default" then
+          cfg.model = nil
+        else
+          cfg.model = model_id
+        end
+        local s = M.get_sidebar()
+        if s then
+          update_winbar(s)
+        end
+        vim.notify("cursor.nvim: model set to " .. model_id, vim.log.levels.INFO)
+      end
+    end)
+  end
+  if not agent.list_models(function(models)
+    open_picker(models)
+  end) then
+    open_picker(vim.deepcopy(fallback_models))
+  end
+end
+
+function M.select_mode()
+  local modes = { "agent", "plan", "ask" }
+  vim.ui.select(modes, { prompt = "Select Cursor mode:" }, function(choice)
     if choice then
       local cfg = config.get()
-      if choice == "default" then
-        cfg.model = nil
-      else
-        cfg.model = choice
-      end
+      cfg.mode = choice
       local s = M.get_sidebar()
       if s then
         update_winbar(s)
       end
-      vim.notify("cursor.nvim: model set to " .. choice, vim.log.levels.INFO)
+      vim.notify("cursor.nvim: mode set to " .. choice, vim.log.levels.INFO)
+    end
+  end)
+end
+
+function M.toggle_plan()
+  local cfg = config.get()
+  cfg.mode = cfg.mode == "plan" and "agent" or "plan"
+  local s = M.get_sidebar()
+  if s then
+    update_winbar(s)
+  end
+  vim.notify("cursor.nvim: mode set to " .. cfg.mode, vim.log.levels.INFO)
+end
+
+function M.insert_skill()
+  local s = M.get_sidebar()
+  if not s then
+    M.open()
+    s = M.get_sidebar()
+  end
+  if not s then
+    return
+  end
+  local cfg = config.get()
+  local skills = vim.deepcopy(cfg.skills or {})
+  if #skills == 0 then
+    vim.notify(
+      "cursor.nvim: configure setup({ skills = { ... } }) to use skill insertion",
+      vim.log.levels.INFO
+    )
+    return
+  end
+  local choices = {}
+  local by_label = {}
+  for _, skill in ipairs(skills) do
+    local name = type(skill) == "table" and skill.name or skill
+    if name and name ~= "" then
+      local label = "/" .. name
+      if type(skill) == "table" and skill.description then
+        label = label .. " — " .. skill.description
+      end
+      table.insert(choices, label)
+      by_label[label] = "/" .. name .. " "
+    end
+  end
+  table.sort(choices)
+  vim.ui.select(choices, { prompt = "Insert skill:" }, function(choice)
+    if choice then
+      local text = by_label[choice]
+      local line = vim.api.nvim_buf_get_lines(s.input_buf, -2, -1, false)[1] or ""
+      local prefix = line == "" and "" or " "
+      vim.api.nvim_buf_set_lines(s.input_buf, -2, -1, false, { line .. prefix .. text })
+      vim.api.nvim_set_current_win(s.input_win)
+      vim.cmd("normal! G$")
     end
   end)
 end

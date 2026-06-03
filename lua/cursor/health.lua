@@ -24,7 +24,8 @@ function M.check()
   h.start("cursor.nvim")
 
   local cfg = config.get()
-  local cmd_parts = vim.split(cfg.cmd, "%s+", { trimempty = true })
+  local transport_cmd = cfg.transport == "sdk" and cfg.sdk and cfg.sdk.cmd or cfg.cmd
+  local cmd_parts = vim.split(transport_cmd or "", "%s+", { trimempty = true })
   local exe = cmd_parts[1] or ""
 
   if vim.fn.executable(exe) == 1 then
@@ -40,8 +41,16 @@ function M.check()
     end
   else
     h.error(
-      string.format("`%s` not found on PATH; install cursor-agent or set cmd in setup()", exe)
+      string.format(
+        "`%s` not found on PATH; install cursor-agent, configure sdk.cmd, or set cmd in setup()",
+        exe
+      )
     )
+  end
+
+  h.info("transport: " .. tostring(cfg.transport or "cli"))
+  if cfg.mode then
+    h.info("mode: " .. tostring(cfg.mode))
   end
 
   if cfg.model then

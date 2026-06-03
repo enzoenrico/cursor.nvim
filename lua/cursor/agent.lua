@@ -14,6 +14,43 @@ local state = {
   on_error = nil,
 }
 
+local function as_list(value)
+  if value == nil then
+    return {}
+  end
+  if type(value) == "table" then
+    return value
+  end
+  return { value }
+end
+
+local function split_cmd(cmd)
+  return vim.split(cmd or "", "%s+", { trimempty = true })
+end
+
+local function add_flag(argv, flag, value)
+  if value == nil or value == false or value == "" then
+    return
+  end
+  table.insert(argv, flag)
+  if value ~= true then
+    table.insert(argv, tostring(value))
+  end
+end
+
+local function add_repeated(argv, flag, values)
+  for _, value in ipairs(as_list(values)) do
+    add_flag(argv, flag, value)
+  end
+end
+
+local function model_label(model)
+  if type(model) == "table" then
+    return model.id
+  end
+  return model
+end
+
 local function reset()
   log.debug("agent", "reset state")
   state.job_id = nil
@@ -101,6 +138,17 @@ local function extract_assistant_text(event)
   return nil
 end
 
+local function extract_model(event)
+  local model = event.model
+  if type(model) == "table" then
+    return model.id or model.name or vim.inspect(model)
+  end
+  if type(model) == "string" then
+    return model
+  end
+  return nil
+end
+
 local function emit_chunk(text)
   if type(text) == "string" and text ~= "" and state.on_chunk then
     pcall(state.on_chunk, text)
@@ -123,10 +171,10 @@ local function dispatch(event)
     emit_chunk(text)
   elseif etype == "agent" or etype == "agent_created" then
     state.agent_id = event.agent_id or event.id or state.agent_id
-    state.model = event.model or state.model
+    state.model = extract_model(event) or state.model
     log.info("agent", "agent identified", { agent_id = state.agent_id, model = state.model })
-  elseif etype == "system" and event.subtype == "init" and type(event.model) == "string" then
-    state.model = event.model
+  elseif etype == "system" and event.subtype == "init" and event.model ~= nil then
+    state.model = extract_model(event) or state.model
     log.info("agent", "model from system init", { model = state.model })
   elseif etype == "task" then
     log.debug("agent", "task event", { text = event.text })
@@ -179,20 +227,92 @@ local function on_exit(_, code, _)
   end)
 end
 
-local function build_argv(cfg, prompt)
-  local argv = {}
-  for _, part in ipairs(vim.split(cfg.cmd, "%s+", { trimempty = true })) do
-    table.insert(argv, part)
-  end
+local function build_cli_argv(cfg, prompt)
+  local argv = split_cmd(cfg.cmd)
   table.insert(argv, "--print")
-  table.insert(argv, "--output-format=stream-json")
-  if cfg.model then
-    table.insert(argv, "--model")
-    table.insert(argv, cfg.model)
+  table.insert(argv, "--output-format=" .. tostring(cfg.output_format or "stream-json"))
+  if cfg.stream_partial_output ~= false then
+    table.insert(argv, "--stream-partial-output")
+  end
+  add_flag(argv, "--model", model_label(cfg.model))
+  if cfg.mode == "plan" then
+    table.insert(argv, "--plan")
+  elseif cfg.mode == "ask" then
+    add_flag(argv, "--mode", "ask")
+  elseif cfg.mode and cfg.mode ~= "agent" then
+    add_flag(argv, "--mode", cfg.mode)
+  end
+  add_flag(argv, "--force", cfg.force)
+  add_flag(argv, "--trust", cfg.trust)
+  add_flag(argv, "--approve-mcps", cfg.approve_mcps)
+  add_flag(argv, "--sandbox", cfg.sandbox)
+  add_flag(argv, "--workspace", cfg.workspace)
+  add_repeated(argv, "--header", cfg.headers)
+  add_repeated(argv, "--plugin-dir", cfg.plugin_dirs)
+  for _, arg in ipairs(as_list(cfg.extra_args)) do
+    table.insert(argv, tostring(arg))
   end
   table.insert(argv, "-p")
   table.insert(argv, prompt)
   return argv
+end
+
+local function build_sdk_argv(cfg, prompt)
+  local sdk = cfg.sdk or {}
+  local argv = split_cmd(sdk.cmd or cfg.cmd)
+  table.insert(argv, "--output-format=stream-json")
+  add_flag(argv, "--runtime", sdk.runtime or "local")
+  add_flag(argv, "--api-key-env", sdk.api_key_env or "CURSOR_API_KEY")
+  add_flag(argv, "--workspace", cfg.workspace or vim.fn.getcwd())
+  add_flag(argv, "--model", model_label(cfg.model))
+  for _, param in ipairs(as_list(cfg.model_params)) do
+    if type(param) == "table" and param.id and param.value then
+      add_flag(argv, "--model-param", tostring(param.id) .. "=" .. tostring(param.value))
+    elseif type(param) == "string" then
+      add_flag(argv, "--model-param", param)
+    end
+  end
+  add_flag(argv, "--mode", cfg.mode or "agent")
+  add_flag(argv, "--force", sdk.force or cfg.force)
+  for _, arg in ipairs(as_list(sdk.extra_args)) do
+    table.insert(argv, tostring(arg))
+  end
+  table.insert(argv, "-p")
+  table.insert(argv, prompt)
+  return argv
+end
+
+local function build_argv(cfg, prompt)
+  if cfg.transport == "sdk" then
+    return build_sdk_argv(cfg, prompt)
+  end
+  return build_cli_argv(cfg, prompt)
+end
+
+local function parse_models_output(text)
+  local ok, decoded = pcall(vim.json.decode, text or "")
+  local models = {}
+  if ok and type(decoded) == "table" then
+    local items = decoded.items or decoded.models or decoded
+    for _, item in ipairs(items) do
+      if type(item) == "string" then
+        table.insert(models, item)
+      elseif type(item) == "table" and item.id then
+        table.insert(
+          models,
+          item.displayName and (item.id .. " — " .. item.displayName) or item.id
+        )
+      end
+    end
+  else
+    for line in (text or ""):gmatch("[^\r\n]+") do
+      local id = line:match("^%s*([%w%._%-/]+)")
+      if id and id ~= "ID" and id ~= "Model" then
+        table.insert(models, id)
+      end
+    end
+  end
+  return models
 end
 
 function M.start(opts)
@@ -207,12 +327,14 @@ function M.start(opts)
     return nil
   end
   local cfg = config.get()
-  local cmd_bin = vim.split(cfg.cmd, "%s+", { trimempty = true })[1]
+  local cmd_for_transport = cfg.transport == "sdk" and cfg.sdk and cfg.sdk.cmd or cfg.cmd
+  local cmd_bin = split_cmd(cmd_for_transport)[1]
   if vim.fn.executable(cmd_bin) ~= 1 then
     log.error("agent", "command not executable", { cmd = cfg.cmd, bin = cmd_bin })
     notify(
       vim.log.levels.ERROR,
-      cfg.cmd .. " not found on PATH. Install cursor-agent or set cmd in setup()."
+      tostring(cmd_for_transport)
+        .. " not found on PATH. Install cursor-agent, configure sdk.cmd, or set cmd in setup()."
     )
     if opts.on_error then
       pcall(opts.on_error, "cursor-agent not on PATH")
@@ -224,7 +346,7 @@ function M.start(opts)
   state.on_done = opts.on_done
   state.on_error = opts.on_error
   state.buffer = ""
-  state.model = opts.model or cfg.model
+  state.model = model_label(opts.model or cfg.model)
 
   local argv = build_argv(cfg, opts.prompt)
   log.info("agent", "spawning process", { argv = argv })
@@ -272,6 +394,34 @@ function M.status()
   }
 end
 
+function M.list_models(callback)
+  local cfg = config.get()
+  if type(cfg.models) == "table" and #cfg.models > 0 then
+    vim.schedule(function()
+      callback(vim.deepcopy(cfg.models))
+    end)
+    return true
+  end
+  if not vim.system then
+    return false
+  end
+  local cmd = split_cmd(cfg.cmd)
+  if #cmd == 0 or vim.fn.executable(cmd[1]) ~= 1 then
+    return false
+  end
+  table.insert(cmd, "models")
+  vim.system(cmd, { text = true }, function(result)
+    local models = {}
+    if result and result.code == 0 then
+      models = parse_models_output(result.stdout or "")
+    end
+    vim.schedule(function()
+      callback(models)
+    end)
+  end)
+  return true
+end
+
 function M.__reset()
   reset()
 end
@@ -282,6 +432,14 @@ end
 
 function M.__extract_assistant_text(event)
   return extract_assistant_text(event)
+end
+
+function M.__build_argv(cfg, prompt)
+  return build_argv(cfg, prompt)
+end
+
+function M.__parse_models_output(text)
+  return parse_models_output(text)
 end
 
 function M.__test_callbacks(opts)

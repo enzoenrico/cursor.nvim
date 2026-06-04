@@ -92,10 +92,13 @@ Open the sidebar with `:CursorToggle` or `:CursorChat`. The sidebar shows a tran
 In the prompt input:
 
 - `<C-s>` submits in insert mode; `<CR>` submits in normal mode
-- `@` opens a file picker to attach file context
+- `@` opens a file picker to attach file context (shown on the input winbar)
+- `,c` manages attached context files (remove or clear all)
 - `<Tab>` switches focus between transcript and input
-- `q` or `<C-c>` cancels input
+- `q` or `<C-c>` closes the sidebar in normal mode; in insert mode `<C-c>` exits insert (set `ui.close_on_empty_ctrl_c = true` to close when the prompt is empty)
 - `/clear`, `/new`, and `/compact` are slash commands for chat management
+
+Transcript messages use highlighted role headers (`You` / `Cursor`). While the agent runs, status appears in the transcript winbar and a loading indicator at the bottom of the transcript.
 
 Project instructions from `.cursor.md` or `.cursorcontext` in the repo root are included automatically when present.
 
@@ -108,7 +111,7 @@ Project instructions from `.cursor.md` or `.cursorcontext` in the repo root are 
 | Sidebar | `:CursorFocus` | Toggle focus between sidebar and code |
 | Sidebar | `:CursorNew` | Start a new conversation |
 | Sidebar | `:CursorZen` | Toggle zen mode (hide other windows) |
-| Prompting | `:CursorAsk {prompt}` | Open sidebar and send a one-shot prompt |
+| Prompting | `:CursorAsk {prompt}` | Open sidebar, fill the prompt, and submit |
 | Prompting | `:CursorEdit` | Edit the current visual selection (visual range) |
 | Agent | `:CursorStop` | Cancel the running agent |
 | Agent | `:CursorStatus` | Print `{ running, agent_id, model }` |
@@ -149,8 +152,8 @@ Inside the sidebar transcript:
 | --- | --- |
 | `]]` | Next message |
 | `[[` | Previous message |
-| `a` | Apply suggestion |
-| `A` | Apply all suggestions |
+| `a` | Apply a code block from the latest assistant reply (into the code window) |
+| `A` | Apply all code blocks from the latest assistant reply |
 
 When the agent inserts git-style conflict markers (`<<<<<<< HEAD` / `=======` / `>>>>>>> Cursor`):
 
@@ -179,6 +182,10 @@ require("cursor").setup({
     width = 30,             -- sidebar width as a percentage
     prompt_height = 8,
     transcript_filetype = "CursorChat",
+    winborder = "rounded",  -- border style for sidebar windows ("none" to disable)
+    use_colorscheme = false,-- link UI highlights to your colorscheme when true
+    close_on_empty_ctrl_c = false,
+    fold_messages = true,   -- fold each message block after the reply completes
     prompt_prefix = "> ",
     show_hints = true,
     welcome = true,
@@ -202,6 +209,9 @@ require("cursor").setup({
     -- full override table; see lua/cursor/config.lua for all defaults
     toggle = "<leader>ct",
     submit = { normal = "<CR>", insert = "<C-s>" },
+    sidebar = {
+      context = ",c",       -- manage @ file attachments
+    },
   },
 })
 ```
@@ -233,8 +243,9 @@ The lower-level `cursor.agent` module exposes `start({ prompt, on_chunk, on_even
 ## Development
 
 ```sh
-make lint    # stylua --check + luacheck
-make test    # plenary busted suite (16 tests)
+make lint     # stylua --check + luacheck
+make test     # plenary busted suite
+make test-ui  # headless welcome/smoke check
 ```
 
 CI runs the same on push and pull request via `.github/workflows/ci.yml`.

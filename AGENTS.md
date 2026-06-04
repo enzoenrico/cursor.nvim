@@ -10,6 +10,7 @@ This is a **Neovim plugin** (pure Lua, no build step). The development loop is `
 |---|---|---|
 | Lint | `make lint` | Runs `stylua --check lua/ plugin/` then `luacheck lua/ plugin/` |
 | Tests | `make test` | Runs plenary busted suite headless via `nvim --headless` |
+| UI smoke | `make test-ui` | Headless check that sidebar welcome renders |
 
 ### Gotchas
 

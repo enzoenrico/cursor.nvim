@@ -38,8 +38,36 @@ local function setup_keymaps()
   end, "edit selection")
 end
 
+local diff_autocmd_setup = false
+
+local function setup_diff_autocmds()
+  if diff_autocmd_setup then
+    return
+  end
+  diff_autocmd_setup = true
+  local diff = require("cursor.diff")
+  local ui_util = require("cursor.ui.util")
+  local group = vim.api.nvim_create_augroup("CursorDiff", { clear = true })
+  vim.api.nvim_create_autocmd({ "BufEnter", "TextChanged" }, {
+    group = group,
+    callback = function(ev)
+      local buf = ev.buf
+      if not ui_util.buf_is_normal(buf) then
+        return
+      end
+      if diff.has_conflicts(buf) then
+        diff.setup_keymaps(buf)
+        diff.refresh(buf)
+      end
+    end,
+  })
+end
+
 function M.setup(opts)
   config.setup(opts)
+  pcall(function()
+    require("cursor.ui.sidebar").refresh_highlights()
+  end)
   log.info(
     "init",
     "setup()",
@@ -51,6 +79,7 @@ function M.setup(opts)
   end
   local sel = require("cursor.selection")
   sel.setup_autocmds()
+  setup_diff_autocmds()
   return M
 end
 

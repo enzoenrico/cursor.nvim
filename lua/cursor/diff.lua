@@ -183,7 +183,18 @@ function M.goto_prev(buf)
   return false
 end
 
+function M.has_conflicts(buf)
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return false
+  end
+  return #find_conflicts(buf) > 0
+end
+
 function M.setup_keymaps(buf)
+  if vim.b[buf].cursor_diff_keymaps then
+    return
+  end
+  vim.b[buf].cursor_diff_keymaps = true
   local cfg = config.get()
   local diff_cfg = cfg.diff or {}
   local opts = { buffer = buf, silent = true }

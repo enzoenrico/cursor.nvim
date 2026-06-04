@@ -35,6 +35,9 @@ M.defaults = {
     enabled = true,
     path = nil,
   },
+  skills = {
+    paths = nil, -- extra skill roots, e.g. { "~/.cursor/skills", ".cursor/skills" }
+  },
   mappings = {
     toggle = "<leader>ct",
     focus = "<leader>cf",
@@ -62,6 +65,7 @@ M.defaults = {
       next_message = "]]",
       prev_message = "[[",
       context = ",c",
+      skills = ",s",
     },
   },
   debug = false,

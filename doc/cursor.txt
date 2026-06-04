@@ -43,6 +43,9 @@ Prompt input:
   <Tab>                           switch transcript ↔ input
   q / <C-c> (normal)              close sidebar
   /clear, /new, /compact          slash commands
+  /skills, /skill <name>          list or attach agent skills
+  /<skill-name> [prompt]          invoke a skill (Cursor SKILL.md)
+  ,s                              manage attached skills
 
 Transcript:
   ]] / [[                         next / previous message

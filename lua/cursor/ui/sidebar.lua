@@ -5,6 +5,7 @@ local history = require("cursor.history")
 local selection = require("cursor.selection")
 local ui_util = require("cursor.ui.util")
 local render = require("cursor.ui.render")
+local skills = require("cursor.skills")
 local version = require("cursor.version")
 local log = require("cursor.log")
 
@@ -137,7 +138,7 @@ local function update_input_winbar(s)
   local cfg = config.get()
   local parts = {}
   if cfg.ui and cfg.ui.show_hints then
-    table.insert(parts, "<CR>/<C-s> send │ @ file │ ,c context │ Tab switch │ q close")
+    table.insert(parts, "<CR>/<C-s> send │ @ file │ /skills │ ,c ,s │ Tab │ q close")
   end
   local files = s.context_files or {}
   if #files > 0 then
@@ -150,6 +151,20 @@ local function update_input_winbar(s)
     local label = " @ " .. table.concat(names, ", ")
     if #files > 2 then
       label = label .. " +" .. (#files - 2)
+    end
+    table.insert(parts, label)
+  end
+  local active = s.active_skills or {}
+  if #active > 0 then
+    local names = {}
+    for i, sk in ipairs(active) do
+      if i <= 2 then
+        table.insert(names, sk.name)
+      end
+    end
+    local label = " / " .. table.concat(names, ", ")
+    if #active > 2 then
+      label = label .. " +" .. (#active - 2)
     end
     table.insert(parts, label)
   end
@@ -257,6 +272,8 @@ local function render_welcome(buf, win)
     ui_util.center_text("/clear  - clear chat", width),
     ui_util.center_text("/new    - new conversation", width),
     ui_util.center_text("/compact - compact history", width),
+    ui_util.center_text("/skills - list agent skills", width),
+    ui_util.center_text("/<skill> - invoke a skill", width),
     "",
   }
   local was_modifiable = vim.bo[buf].modifiable
@@ -291,7 +308,7 @@ local function create_input(cfg)
   local prefix = (cfg.ui and cfg.ui.prompt_prefix) or "> "
   vim.fn.sign_define("CursorPromptSign", { text = prefix, texthl = "CursorPromptPrefix" })
   vim.fn.sign_place(0, "CursorPromptSigns", "CursorPromptSign", buf, { lnum = 1 })
-  local placeholder = "Type a message... (<C-s> to send, /clear, /new)"
+  local placeholder = "Type a message... (<C-s> send, /skills, /clear, /new)"
   ui_util.setup_placeholder_autocmds(buf, placeholder)
   return buf
 end
@@ -388,12 +405,106 @@ local function open_windows(s, cfg)
   update_input_winbar(s)
 end
 
+local function get_code_buf(s)
+  if s.code_win and vim.api.nvim_win_is_valid(s.code_win) then
+    return vim.api.nvim_win_get_buf(s.code_win)
+  end
+  return nil
+end
+
 local function parse_slash_command(text)
-  local cmd = text:match("^/(%S+)")
+  local cmd, args = text:match("^/(%S+)%s*(.*)$")
   if cmd then
-    return cmd, text:sub(#cmd + 2):gsub("^%s+", ""):gsub("%s+$", "")
+    return cmd, vim.trim(args)
   end
   return nil, text
+end
+
+local function attach_skill(s, skill)
+  s.active_skills = s.active_skills or {}
+  for _, existing in ipairs(s.active_skills) do
+    if existing.name == skill.name then
+      return false
+    end
+  end
+  table.insert(s.active_skills, skill)
+  return true
+end
+
+local function resolve_skill(name, buf)
+  local skill = skills.get(name, { reload = true })
+  if not skill then
+    return nil
+  end
+  if not skills.applies_to_buffer(skill, buf) then
+    return nil, "not_in_scope"
+  end
+  return skill
+end
+
+function M.pick_skill(s)
+  s = s or M.get_sidebar()
+  if not s then
+    return
+  end
+  local buf = get_code_buf(s) or s.transcript_buf
+  local available = skills.filter_for_buffer(buf, { reload = true })
+  if #available == 0 then
+    vim.notify("cursor.nvim: no skills found for this project", vim.log.levels.INFO)
+    return
+  end
+  local choices = {}
+  for _, sk in ipairs(available) do
+    local desc = sk.description ~= "" and (" — " .. sk.description) or ""
+    table.insert(choices, sk.name .. desc)
+  end
+  vim.ui.select(choices, { prompt = "Attach skill:" }, function(choice)
+    if not choice then
+      return
+    end
+    local name = choice:match("^(%S+)")
+    local skill = skills.get(name)
+    if skill and attach_skill(s, skill) then
+      update_input_winbar(s)
+      vim.notify("cursor.nvim: attached skill /" .. skill.name, vim.log.levels.INFO)
+    end
+  end)
+end
+
+function M.manage_skills(s)
+  s = s or M.get_sidebar()
+  if not s then
+    return
+  end
+  s.active_skills = s.active_skills or {}
+  if #s.active_skills == 0 then
+    vim.notify("cursor.nvim: no skills attached (use /skills or /<name>)", vim.log.levels.INFO)
+    return
+  end
+  local choices = { "— Clear all —", "— Add skill —" }
+  for _, sk in ipairs(s.active_skills) do
+    table.insert(choices, sk.name)
+  end
+  vim.ui.select(choices, { prompt = "Active skills:" }, function(choice)
+    if not choice then
+      return
+    end
+    if choice == "— Clear all —" then
+      s.active_skills = {}
+    elseif choice == "— Add skill —" then
+      M.pick_skill(s)
+      return
+    else
+      for i, sk in ipairs(s.active_skills) do
+        if sk.name == choice then
+          table.remove(s.active_skills, i)
+          break
+        end
+      end
+    end
+    update_input_winbar(s)
+    vim.notify("cursor.nvim: skills updated", vim.log.levels.INFO)
+  end)
 end
 
 local function clear_welcome(s)
@@ -423,7 +534,7 @@ local function handle_submit(s)
     return
   end
 
-  local cmd, _ = parse_slash_command(joined)
+  local cmd, slash_args = parse_slash_command(joined)
   if cmd == "clear" then
     vim.api.nvim_buf_set_lines(s.input_buf, 0, -1, false, { "" })
     local cfg = config.get()
@@ -433,8 +544,10 @@ local function handle_submit(s)
     vim.bo[s.transcript_buf].modifiable = was
     reset_transcript_state(s)
     s.conversation = { messages = {}, id = s.conversation.id }
+    s.active_skills = {}
     s.has_welcome = false
     set_state(s, nil)
+    update_input_winbar(s)
     if cfg.ui and cfg.ui.welcome then
       render_welcome(s.transcript_buf, s.transcript_win)
       s.has_welcome = true
@@ -448,6 +561,8 @@ local function handle_submit(s)
       history.save(s.conversation.id, s.conversation)
     end
     s.conversation = { messages = {}, id = history.generate_id() }
+    s.active_skills = {}
+    update_input_winbar(s)
     local was = vim.bo[s.transcript_buf].modifiable
     vim.bo[s.transcript_buf].modifiable = true
     vim.api.nvim_buf_set_lines(s.transcript_buf, 0, -1, false, {})
@@ -470,11 +585,63 @@ local function handle_submit(s)
     return
   end
 
+  if cmd == "skills" then
+    vim.api.nvim_buf_set_lines(s.input_buf, 0, -1, false, { "" })
+    M.pick_skill(s)
+    return
+  end
+
+  if cmd == "skill" then
+    vim.api.nvim_buf_set_lines(s.input_buf, 0, -1, false, { "" })
+    local skill_name = slash_args:match("^(%S+)")
+    if not skill_name or skill_name == "" then
+      M.pick_skill(s)
+      return
+    end
+    local buf = get_code_buf(s) or s.transcript_buf
+    local skill, err = resolve_skill(skill_name, buf)
+    if not skill then
+      local msg = err == "not_in_scope" and ("skill `/" .. skill_name .. "` is not in scope here")
+        or ("unknown skill `/" .. skill_name .. "`")
+      vim.notify("cursor.nvim: " .. msg, vim.log.levels.WARN)
+      return
+    end
+    if attach_skill(s, skill) then
+      update_input_winbar(s)
+      vim.notify("cursor.nvim: attached skill /" .. skill.name, vim.log.levels.INFO)
+    end
+    local rest = vim.trim(slash_args:sub(#skill_name + 1))
+    if rest == "" then
+      return
+    end
+    joined = rest
+  elseif cmd and not skills.is_builtin_slash(cmd) then
+    local buf = get_code_buf(s) or s.transcript_buf
+    local skill, err = resolve_skill(cmd, buf)
+    if skill then
+      attach_skill(s, skill)
+      update_input_winbar(s)
+      if slash_args == "" then
+        vim.api.nvim_buf_set_lines(s.input_buf, 0, -1, false, { "" })
+        vim.notify("cursor.nvim: attached skill /" .. skill.name, vim.log.levels.INFO)
+        return
+      end
+      joined = slash_args
+      vim.api.nvim_buf_set_lines(s.input_buf, 0, -1, false, { "" })
+    elseif err == "not_in_scope" then
+      vim.notify("cursor.nvim: skill `/" .. cmd .. "` is not in scope here", vim.log.levels.WARN)
+      return
+    end
+  end
+
   local sel_context = selection.format_context()
   local instructions = ui_util.get_project_instructions()
   local full_prompt = ""
   if instructions then
     full_prompt = full_prompt .. "[Project Instructions]\n" .. instructions .. "\n\n"
+  end
+  if s.active_skills and #s.active_skills > 0 then
+    full_prompt = full_prompt .. skills.format_many_for_prompt(s.active_skills) .. "\n\n"
   end
   if sel_context then
     full_prompt = full_prompt .. "[Selected Code]\n" .. sel_context .. "\n\n"
@@ -634,13 +801,6 @@ local function handle_submit(s)
   end
 end
 
-local function get_code_buf(s)
-  if s.code_win and vim.api.nvim_win_is_valid(s.code_win) then
-    return vim.api.nvim_win_get_buf(s.code_win)
-  end
-  return nil
-end
-
 local function insert_blocks_at_cursor(buf, blocks)
   local win = vim.fn.bufwinid(buf)
   if win == -1 then
@@ -787,6 +947,11 @@ local function bind_keymaps(s)
     M.manage_context(s)
   end, vim.tbl_extend("force", input_opts, { desc = "cursor.nvim: manage file context" }))
 
+  local skills_key = sidebar_keys.skills or ",s"
+  vim.keymap.set("n", skills_key, function()
+    M.manage_skills(s)
+  end, vim.tbl_extend("force", input_opts, { desc = "cursor.nvim: manage skills" }))
+
   vim.keymap.set("n", "@", function()
     M.add_file_context(s)
   end, vim.tbl_extend("force", input_opts, { desc = "cursor.nvim: add file context" }))
@@ -875,6 +1040,7 @@ function M.open(opts)
       selected_code_buf = create_selected_code(),
       conversation = { messages = {}, id = history.generate_id() },
       context_files = {},
+      active_skills = {},
       spinner_frame = nil,
       state = nil,
       last_model = nil,
@@ -968,9 +1134,11 @@ function M.new_chat()
     end
     s.conversation = { messages = {}, id = history.generate_id() }
     s.context_files = {}
+    s.active_skills = {}
     s.has_welcome = false
     s.last_model = nil
     reset_transcript_state(s)
+    update_input_winbar(s)
     selection.clear()
     hide_selected_code_win(s)
     local was = vim.bo[s.transcript_buf].modifiable

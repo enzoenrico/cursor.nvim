@@ -97,6 +97,8 @@ In the prompt input:
 - `<Tab>` switches focus between transcript and input
 - `q` or `<C-c>` closes the sidebar in normal mode; in insert mode `<C-c>` exits insert (set `ui.close_on_empty_ctrl_c = true` to close when the prompt is empty)
 - `/clear`, `/new`, and `/compact` are slash commands for chat management
+- `/skills` opens a picker for agent skills; `/skill <name>` or `/<name>` attaches a skill (from `.cursor/skills/`, `.agents/skills/`, and global skill dirs)
+- `,s` manages attached skills (same as file context with `,c`)
 
 Transcript messages use highlighted role headers (`You` / `Cursor`). While the agent runs, status appears in the transcript winbar and a loading indicator at the bottom of the transcript.
 
@@ -194,6 +196,9 @@ require("cursor").setup({
     enabled = true,
     path = nil,               -- default: stdpath("data")/cursor_nvim/history/
   },
+  skills = {
+    paths = nil,              -- optional extra skill roots to scan
+  },
   diff = {
     ours = "co",
     theirs = "ct",
@@ -211,6 +216,7 @@ require("cursor").setup({
     submit = { normal = "<CR>", insert = "<C-s>" },
     sidebar = {
       context = ",c",       -- manage @ file attachments
+      skills = ",s",        -- manage attached /skills
     },
   },
 })

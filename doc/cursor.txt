@@ -1,4 +1,4 @@
-*cursor.txt*    A Neovim extension for the Cursor SDK             *cursor.nvim*
+*cursor.txt*    A Neovim extension for the Cursor agent CLI           *cursor.nvim*
 
 ==============================================================================
 INTRODUCTION                                                  *cursor-intro*
@@ -18,35 +18,83 @@ QUICK START                                                  *cursor-setup*
     require("cursor").setup({
       cmd     = "cursor-agent",
       model   = nil,         -- nil = SDK default
-      keymaps = false,       -- true installs <leader>c* defaults
-      ui      = { layout = "vsplit" },
+      keymaps = true,        -- <leader>c* defaults
+      ui      = {
+        layout = "right",    -- "right" | "left" | "top" | "bottom"
+        width = 30,
+        winborder = "rounded",
+      },
       notify  = true,
     })
 <
 
-Then run any of the commands below.
+Open the sidebar with |:CursorToggle| or |:CursorChat|.
+
+==============================================================================
+SIDEBAR                                                         *cursor-sidebar*
+
+The sidebar is a split layout: transcript (top) and prompt input (bottom).
+Optional selected-code panel when using |:CursorEdit|.
+
+Prompt input:
+  <CR> (normal) / <C-s> (insert)  submit
+  @                               attach file context
+  ,c                              manage context files
+  <Tab>                           switch transcript ↔ input
+  q / <C-c> (normal)              close sidebar
+  /clear, /new, /compact          slash commands
+  /skills, /skill <name>          list or attach agent skills
+  /<skill-name> [prompt]          invoke a skill (Cursor SKILL.md)
+  ,s                              manage attached skills
+
+Transcript:
+  ]] / [[                         next / previous message
+  a / A                           apply code block(s) from latest reply
+
+Conflict markers in code buffers (`<<<<<<< HEAD` / `>>>>>>> Cursor`) enable
+diff keymaps automatically (see |cursor-diff|).
 
 ==============================================================================
 COMMANDS                                                  *cursor-commands*
 
-                                                                  *:CursorChat*
-:CursorChat       Open a transcript + prompt window pair backed by a fresh
-                  Cursor agent run.
+Sidebar~
+  |:CursorToggle|     Toggle sidebar
+  |:CursorChat|       Open sidebar
+  |:CursorFocus|      Toggle focus code ↔ sidebar
+  |:CursorNew|        New conversation
+  |:CursorZen|        Zen mode (minimize code window)
+  |:CursorHistory|    Browse saved conversations
+  |:CursorModel|      Pick a model
 
-                                                                   *:CursorAsk*
-:CursorAsk {prompt}
-                  One-shot prompt. Output streams into a scratch markdown
-                  buffer. Quote multi-word prompts.
+Prompting~
+  |:CursorAsk| {prompt}
+                  Open sidebar, fill prompt, and submit
 
-                                                                  *:CursorStop*
-:CursorStop       Cancel the in-flight agent run, if any.
+Agent~
+  |:CursorStop|       Cancel running agent
+  |:CursorStatus|     Echo { running, agent_id, model }
 
-                                                                *:CursorStatus*
-:CursorStatus     Echo the current run status (running, agent_id, model).
+Diff~
+  |:CursorApply|      Resolve conflict at cursor
+  |:CursorApplyAll|   Accept all incoming in buffer
 
-                                                               *:CursorVersion*
-:CursorVersion    Echo `cursor.nvim v<version>` to |:messages|, where
-                  <version> matches |require("cursor").version()|.
+Meta~
+  |:CursorVersion|    Print version to |:messages|
+  |:checkhealth cursor|  Verify CLI and environment
+
+==============================================================================
+DIFF KEYMAPS                                                  *cursor-diff*
+
+When conflict markers are present in a normal buffer:
+
+  co    keep current (ours)
+  ct    keep incoming (theirs)
+  ca    accept all incoming
+  cb    keep both
+  ]x    next conflict
+  [x    previous conflict
+
+Configure under `diff` in |setup()|.
 
 ==============================================================================
 HEALTH                                                       *cursor-health*
@@ -55,39 +103,48 @@ HEALTH                                                       *cursor-health*
     :checkhealth cursor
 <
 
-Reports whether `cursor-agent` is on $PATH, its version, and whether
-|vim.json| is available (it is on Neovim 0.10+).
+Reports whether `cursor-agent` is on $PATH and whether |vim.json| is available.
 
 ==============================================================================
 LUA API                                                          *cursor-api*
 
-require("cursor").setup({opts})        Validate and store options.
-require("cursor").ask(prompt)          One-shot prompt.
-require("cursor").chat()               Open chat panel.
-require("cursor").stop()               Stop the active run.
-require("cursor").status()             Returns { running, agent_id, model }.
-require("cursor").version()            Returns the plugin's semver string.
+require("cursor").setup({opts})
+require("cursor").ask(prompt)          Open sidebar and submit
+require("cursor").chat()               Open sidebar
+require("cursor").toggle()
+require("cursor").focus()
+require("cursor").new_chat()
+require("cursor").edit()               Edit visual selection
+require("cursor").stop()
+require("cursor").status()             { running, agent_id, model }
+require("cursor").version()
+require("cursor").history()
+require("cursor").select_model()
+require("cursor").zen()
 
-require("cursor.agent").start({opts}) Lower-level: spawn the CLI yourself.
-  opts.prompt    string (required)
-  opts.on_chunk  fun(text)
-  opts.on_event  fun(event)   raw decoded JSON line
-  opts.on_done   fun(code)
-  opts.on_error  fun(line)
+require("cursor.agent").start({opts})  Lower-level CLI streaming API.
 
 ==============================================================================
 KEYMAPS                                                     *cursor-keymaps*
 
-When |setup()| receives `keymaps = true`, the plugin installs:
+With `keymaps = true`:
 
-  <leader>cc  → :CursorChat
-  <leader>ca  → prompt for input, then :CursorAsk
-  <leader>cs  → :CursorStop
-  <leader>c?  → :CursorStatus
+  <leader>ct   toggle sidebar
+  <leader>cf   focus
+  <leader>cc   chat
+  <leader>ca   prompt then ask
+  <leader>cn   new chat
+  <leader>ce   edit selection
+  <leader>ch   history
+  <leader>cm   model
+  <leader>cz   zen
+  <leader>cb   add buffer to context
+  <leader>cs   stop
+  <leader>c?   status
 
 ==============================================================================
 LICENSE                                                     *cursor-license*
 
-cursor.nvim ships under the Apache-2.0 license; see LICENSE in the repo root.
+Apache-2.0. See LICENSE in the repo root.
 
  vim:tw=78:ts=8:ft=help:norl:

@@ -116,6 +116,73 @@ function M.center_text(text, width)
   return string.rep(" ", pad) .. text
 end
 
+local IGNORE_DIRS = {
+  [".git"] = true,
+  ["node_modules"] = true,
+  [".deps"] = true,
+  [".venv"] = true,
+  ["venv"] = true,
+  ["dist"] = true,
+  ["build"] = true,
+  [".cache"] = true,
+}
+
+function M.should_ignore_path(path)
+  for part in path:gmatch("[^/]+") do
+    if IGNORE_DIRS[part] then
+      return true
+    end
+  end
+  return false
+end
+
+--- Collect project files for @ context picker (capped, sorted).
+function M.find_project_files(opts)
+  opts = opts or {}
+  local cwd = opts.cwd or vim.fn.getcwd()
+  local max = opts.max or 500
+  local results = {}
+
+  local ok, paths = pcall(vim.fs.find, function(name, path)
+    if name:sub(1, 1) == "." and name ~= ".cursor.md" and name ~= ".cursorcontext" then
+      return false
+    end
+    local rel = path:sub(#cwd + 2)
+    if rel == "" then
+      rel = name
+    else
+      rel = rel .. "/" .. name
+    end
+    if M.should_ignore_path(rel) then
+      return false
+    end
+    return vim.fn.isdirectory(path) == 0
+  end, {
+    path = cwd,
+    type = "file",
+    limit = max * 4,
+  })
+
+  if not ok or not paths then
+    return {}
+  end
+
+  for _, abs in ipairs(paths) do
+    if vim.fn.isdirectory(abs) == 0 then
+      local rel = abs:sub(#cwd + 2)
+      if rel ~= "" and not M.should_ignore_path(rel) then
+        table.insert(results, rel)
+      end
+    end
+    if #results >= max then
+      break
+    end
+  end
+
+  table.sort(results)
+  return results
+end
+
 function M.get_project_instructions()
   local markers = { ".cursor.md", ".cursorcontext", "cursor.md" }
   local cwd = vim.fn.getcwd()
